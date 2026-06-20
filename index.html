@@ -734,12 +734,13 @@ async function loadData() {
     showContent(lbData);
 
     // Fetch Wikipedia data ASYNC in background (don't block rendering)
+    console.log('Starting Wikipedia data fetch...');
     fetchAllGroups().then(([wikiStandings, wikiBoot]) => {
+      console.log('Wikipedia data loaded:', Object.keys(wikiStandings).length, 'groups,', wikiBoot.length, 'scorers');
       renderStandings(picks, wikiStandings, wikiBoot, groupResults);
       renderBracket(wikiStandings, picks);
     }).catch(e => {
       console.warn('Wikipedia fetch failed:', e);
-      // Still render "loading" placeholders
       renderStandings(picks, {}, [], groupResults);
       renderBracket({}, picks);
     });
@@ -772,7 +773,7 @@ async function fetchAllGroups() {
   // Fetch all groups sequentially (avoids Wikipedia rate limiting)
   const standings = {};
   for (const gs of groupSections) {
-    await new Promise(r => setTimeout(r, 400));
+    await new Promise(r => setTimeout(r, 200));
     try {
       const data = await wikiFetch({ action: 'parse', page: '2026_FIFA_World_Cup', prop: 'text', section: gs.index });
       const text = data.parse.text['*'];
