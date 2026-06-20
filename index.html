@@ -810,15 +810,24 @@ async function fetchAllGroups() {
           const boot = [];
           let text = data.parse.text['*'];
           text = text.replace(/<br\s*\/?>/gi, '\n');
-          const goalHeaders = [...text.matchAll(/<p><b>(\d+) goals?<\/b><\/p>/g)];
+          const goalHeaders = [...text.matchAll(/<p><b>(\d+) goals?<\/b>[\s\S]*?<\/p>/g)];
           for (const gh of goalHeaders) {
             const goals = parseInt(gh[1]);
             const after = text.slice(gh.index + gh[0].length);
             const nextHeader = after.search(/<p><b>\d+ goals?/);
             const chunk = nextHeader > 0 ? after.slice(0, nextHeader) : after;
-            const players = [...chunk.matchAll(/title="([^"]+)"/g)].map(m => m[1]);
-            const realPlayers = players.filter(p =>
-              !p.includes('national football team') && !p.includes('flag') && p.length > 2 && !p.includes('Template'));
+            const players = [...chunk.matchAll(/title="([^"]+?)"(?:\s|>)/g)];
+            const realPlayers = players
+              .map(m => m[1].replace(/&#39;/g, "'"))
+              .filter(p =>
+                !p.includes('national football team') &&
+                !p.includes('flag') &&
+                !p.includes('Template') &&
+                !p.toLowerCase().includes('edit') &&
+                !p.includes('File:') &&
+                !p.startsWith('/') &&
+                p.length > 2);
+
             for (const p of realPlayers) boot.push({ name: p, goals });
           }
           return boot;
