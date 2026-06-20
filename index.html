@@ -537,7 +537,7 @@
         <span class="icon">⚡</span>
         <h2>As Things Stand</h2>
       </div>
-      <p class="section-subtitle">Current group leaders based on Wikipedia data, auto-updated via cron every 30 min. Green = correct pick, red = wrong if groups ended today.</p>
+      <p class="section-subtitle">Current group leaders based on Wikipedia data, auto-updated via cron daily. Green = correct pick, red = wrong if groups ended today.</p>
 
       <div class="card">
         <div class="ats-summary" id="ats-summary"></div>
@@ -657,12 +657,14 @@ const GIDS = { leaderboard: '605133495', picks: '0', results: '1996730532' };
 const GROUP_NAMES = ['A','B','C','D','E','F','G','H','I','J','K','L'];
 const PICK_COLS = { email: 0, groups: [1,2,3,4,5,6,7,8,9,10,11,12], boot: 13, glove: 14, name: 17 };
 
-function gvizUrl(gid) {
-  return `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&tq=&gid=${gid}`;
+function gvizUrl(gid, range) {
+  let url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&tq=&gid=${gid}`;
+  if (range) url += `&range=${encodeURIComponent(range)}`;
+  return url;
 }
 
 // Use JSONP via <script> tag injection — bypasses ALL CORS/fetch/cookie issues
-function fetchSheet(gid) {
+function fetchSheet(gid, range) {
   return new Promise((resolve, reject) => {
     const callbackName = '_gviz_' + gid + '_' + Date.now();
     window[callbackName] = function(json) {
@@ -688,7 +690,7 @@ function fetchSheet(gid) {
 
     const script = document.createElement('script');
     script.id = 'gviz-' + gid;
-    script.src = gvizUrl(gid);
+    script.src = gvizUrl(gid, range);
     script.onerror = () => {
       delete window[callbackName];
       document.getElementById('gviz-' + gid)?.remove();
@@ -744,10 +746,11 @@ function switchTab(tabId, btn) {
 // ====== MAIN ======
 async function loadData() {
   try {
-    const [lbRaw, picksRaw, resultsRaw] = await Promise.all([
+    const [lbRaw, picksRaw, resultsRaw, gwRaw] = await Promise.all([
       fetchSheet(GIDS.leaderboard),
       fetchSheet(GIDS.picks),
       fetchSheet(GIDS.results),
+      fetchSheet(GIDS.results, 'A5:B16'),
     ]);
 
     // Parse leaderboard
@@ -777,15 +780,13 @@ async function loadData() {
       });
     }
 
-    // Parse results from sheet
+    // Parse results from sheet (main fetch for golden boot + bracket data)
     const groupResults = {};
     const bootData = [];
     let inBoot = false;
     for (const row of resultsRaw) {
       if (!row || row.length < 2) continue;
       const a = (row[0]||'').trim(), b = (row[1]||'').trim();
-      // Group winners
-      if (a.startsWith('Group ') && b) groupResults[a.replace('Group ','').trim()] = b;
       // Golden boot table (starts with "GOLDEN BOOT" marker)
       if (a.startsWith('GOLDEN BOOT')) { inBoot = true; continue; }
       if (inBoot && a && b) {
@@ -794,6 +795,13 @@ async function loadData() {
           bootData.push({ name: b, goals: parseInt(row[2]) || 0 });
         }
       }
+    }
+
+    // Parse group winners from dedicated range fetch (gviz skips rows 1-16 otherwise)
+    for (const row of gwRaw) {
+      if (!row || row.length < 2) continue;
+      const a = (row[0]||'').trim(), b = (row[1]||'').trim();
+      if (a.startsWith('Group ') && b) groupResults[a.replace('Group ','').trim()] = b;
     }
 
     // Render sheet data IMMEDIATELY (leaderboard, picks, results)
@@ -993,7 +1001,7 @@ function renderStandings(picks, groupResults, bootData) {
       </div>`
     ).join('');
   } else {
-    document.getElementById('boot-grid').innerHTML = '<p style="color:var(--text-muted);">No goalscorers data yet. Updating via Wikipedia every 30 min during matches.</p>';
+    document.getElementById('boot-grid').innerHTML = '<p style="color:var(--text-muted);">No goalscorers data yet. Updating via Wikipedia daily.</p>';
   }
 }
 
@@ -1017,7 +1025,7 @@ function renderLeaderboard(data) {
   const medals = ['🥇','🥈','🥉'];
   document.getElementById('lb-body').innerHTML = data.map((p, i) =>
     `<tr>
-      <td>${i<3?medals[i]:p.rank}</td>
+      <td>${i<3?medals[i]:i+1}</td>
       <td class="lb-player-name">${p.player}</td>
       <td class="lb-phase">${p.p1}</td>
       <td class="lb-phase">${p.p2a}</td>
