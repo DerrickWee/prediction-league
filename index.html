@@ -839,7 +839,7 @@ function stripHtml(html) {
   return txt;
 }
 function cleanTeamName(raw) {
-  return raw.replace(/\s*\([^)]*\)/g, '').replace(/\[[^\]]*\]/g, '').trim();
+  return raw.replace(/\s*\([^)]*\)/g, '').replace(/\[[^\]]*\]/g, '').replace(/[\u00a0\u200b\u200c\u200d\ufeff]/g, '').trim();
 }
 
 // ====== RENDER: AS THINGS STAND ======
@@ -860,15 +860,17 @@ function renderStandings(picks, wikiStandings, wikiBoot, groupResults) {
     if (t && t.length > 0) liveLeaders[g] = t[0].name;
   }
 
-  // Hypothetical scores
+  // Hypothetical scores — compare picks vs LIVE Wikipedia leaders
   const cmpRows = picks.map(p => {
     let correct = 0, wrong = 0;
     p.groups.forEach((pick, gi) => {
       const letter = GROUP_NAMES[gi];
       const leader = liveLeaders[letter];
       if (leader) {
-        if (pick.toLowerCase() === leader.toLowerCase()) correct++;
+        if (pick.toLowerCase().trim() === leader.toLowerCase().trim()) correct++;
         else wrong++;
+      } else {
+        wrong++; // no leader data yet
       }
     });
     const score = correct * 10;
