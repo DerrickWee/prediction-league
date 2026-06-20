@@ -821,6 +821,7 @@ async function fetchAllGroups() {
               .map(m => m[1].replace(/&#39;/g, "'"))
               .filter(p =>
                 !p.includes('national football team') &&
+                !p.includes('soccer team') &&
                 !p.includes('flag') &&
                 !p.includes('Template') &&
                 !p.toLowerCase().includes('edit') &&
