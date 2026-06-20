@@ -654,6 +654,8 @@
 const SHEET_ID = '1_M2ATXhLvMNHNLD1SlvjpBmau-h4BWsEPysx2cX2WtI';
 const WIKI_API = 'https://en.wikipedia.org/w/api.php';
 const GIDS = { leaderboard: '605133495', picks: '0', results: '1996730532' };
+const GROUP_NAMES = ['A','B','C','D','E','F','G','H','I','J','K','L'];
+const PICK_COLS = { email: 0, groups: [1,2,3,4,5,6,7,8,9,10,11,12], boot: 13, glove: 14, name: 17 };
 
 function gvizUrl(gid) {
   return `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&tq=&gid=${gid}`;
