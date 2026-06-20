@@ -723,36 +723,39 @@ async function loadData() {
       if (a.startsWith('Group ') && b) groupResults[a.replace('Group ','').trim()] = b;
     }
 
-    // Fetch live standings from Wikipedia
-    let wikiStandings = {}, wikiBoot = [];
-    try {
-      const [wg, wb] = await fetchAllGroups();
-      wikiStandings = wg;
-      wikiBoot = wb;
-    } catch (e) {
-      console.warn('Wikipedia fetch failed, using sheet-only:', e);
-    }
-
-    // Render everything
-    renderStandings(lbData, picks, wikiStandings, wikiBoot, groupResults);
+    // Render sheet data IMMEDIATELY (leaderboard, picks, results)
     renderPodium(lbData);
     renderLeaderboard(lbData);
     renderPicks(picks, groupResults);
-    renderBracket(wikiStandings, picks);
     renderResults(groupResults);
     renderRules();
 
-    document.getElementById('player-count').textContent = lbData.length;
-    document.getElementById('last-updated').textContent =
-      `Updated ${new Date().toLocaleString('en-SG', {timeZone:'Asia/Singapore',dateStyle:'medium',timeStyle:'short'})} SGT`;
+    // Show content right away with empty standings placeholder
+    showContent(lbData);
 
-    document.getElementById('loading').style.display = 'none';
-    document.getElementById('content').style.display = 'block';
+    // Fetch Wikipedia data ASYNC in background (don't block rendering)
+    fetchAllGroups().then(([wikiStandings, wikiBoot]) => {
+      renderStandings(picks, wikiStandings, wikiBoot, groupResults);
+      renderBracket(wikiStandings, picks);
+    }).catch(e => {
+      console.warn('Wikipedia fetch failed:', e);
+      // Still render "loading" placeholders
+      renderStandings(picks, {}, [], groupResults);
+      renderBracket({}, picks);
+    });
   } catch (e) {
     console.error(e);
     document.getElementById('loading').style.display = 'none';
     document.getElementById('error').style.display = 'block';
   }
+}
+
+function showContent(lbData) {
+  document.getElementById('player-count').textContent = lbData.length;
+  document.getElementById('last-updated').textContent =
+    `Updated ${new Date().toLocaleString('en-SG', {timeZone:'Asia/Singapore',dateStyle:'medium',timeStyle:'short'})} SGT`;
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('content').style.display = 'block';
 }
 
 // ====== WIKIPEDIA: All groups + goalscorers ======
@@ -766,63 +769,67 @@ async function fetchAllGroups() {
   // Find goalscorers section
   const gsSection = sections.find(s => s.line === 'Goalscorers');
 
-  // Fetch all groups in parallel (with small delay to avoid rate limiting)
-  const standings = {};
-  for (const gs of groupSections) {
-    await sleep(1200); // Rate limit safety
-    try {
-      const data = await wikiFetch({ action: 'parse', page: '2026_FIFA_World_Cup', prop: 'text', section: gs.index });
-      const text = data.parse.text['*'];
-      const tableMatch = text.match(/<table[^>]*wikitable[^>]*>[\s\S]*?<\/table>/);
-      if (tableMatch) {
-        const rows = [...tableMatch[0].matchAll(/<tr>([\s\S]*?)<\/tr>/g)];
-        const teams = [];
-        for (let ri = 1; ri < rows.length; ri++) {
-          const cells = [...rows[ri][1].matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/g)].map(c => stripHtml(c[1]));
-          if (cells.length >= 10) {
-            teams.push({
-              pos: parseInt(cells[0]),
-              name: cleanTeamName(cells[1]),
-              pld: parseInt(cells[2]), w: parseInt(cells[3]), d: parseInt(cells[4]),
-              l: parseInt(cells[5]), pts: parseInt(cells[9]),
-            });
+  // Fetch all groups in parallel (no rate limiting needed from browser CORS)
+  const groupPromises = groupSections.map(gs => {
+    const letter = gs.line.replace('Group ', '').trim();
+    return wikiFetch({ action: 'parse', page: '2026_FIFA_World_Cup', prop: 'text', section: gs.index })
+      .then(data => {
+        const text = data.parse.text['*'];
+        const tableMatch = text.match(/<table[^>]*wikitable[^>]*>[\s\S]*?<\/table>/);
+        if (tableMatch) {
+          const rows = [...tableMatch[0].matchAll(/<tr>([\s\S]*?)<\/tr>/g)];
+          const teams = [];
+          for (let ri = 1; ri < rows.length; ri++) {
+            const cells = [...rows[ri][1].matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/g)].map(c => stripHtml(c[1]));
+            if (cells.length >= 10) {
+              teams.push({
+                pos: parseInt(cells[0]),
+                name: cleanTeamName(cells[1]),
+                pld: parseInt(cells[2]), w: parseInt(cells[3]), d: parseInt(cells[4]),
+                l: parseInt(cells[5]), pts: parseInt(cells[9]),
+              });
+            }
           }
+          return { letter, teams };
         }
-        const letter = gs.line.replace('Group ', '').trim();
-        standings[letter] = teams;
-      }
-    } catch (e) { /* skip group */ }
+        return { letter, teams: [] };
+      })
+      .catch(() => ({ letter: gs.line.replace('Group ', '').trim(), teams: [] }));
+  });
+
+  const groupResults = await Promise.all(groupPromises);
+  const standings = {};
+  for (const gr of groupResults) {
+    standings[gr.letter] = gr.teams;
   }
 
-  // Fetch goalscorers
-  let boot = [];
-  if (gsSection) {
-    await sleep(1200);
-    try {
-      const data = await wikiFetch({ action: 'parse', page: '2026_FIFA_World_Cup', prop: 'text', section: gsSection.index });
-      let text = data.parse.text['*'];
-      // Replace <br/> with newlines for easier parsing
-      text = text.replace(/<br\s*\/?>/gi, '\n');
-      // Find goal headers
-      const goalHeaders = [...text.matchAll(/<p><b>(\d+) goals?<\/b><\/p>/g)];
-      for (const gh of goalHeaders) {
-        const goals = parseInt(gh[1]);
-        // Get content after this header until next header or end
-        const after = text.slice(gh.index + gh[0].length);
-        const nextHeader = after.search(/<p><b>\d+ goals?/);
-        const chunk = nextHeader > 0 ? after.slice(0, nextHeader) : after;
-        const players = [...chunk.matchAll(/title="([^"]+)"/g)].map(m => m[1]);
-        const realPlayers = players.filter(p =>
-          !p.includes('national football team') && !p.includes('flag') && p.length > 2 && !p.includes('Template'));
-        for (const p of realPlayers) boot.push({ name: p, goals });
-      }
-    } catch (e) { /* skip boot */ }
-  }
+  // Fetch goalscorers (parallel with groups)
+  const bootPromise = gsSection
+    ? wikiFetch({ action: 'parse', page: '2026_FIFA_World_Cup', prop: 'text', section: gsSection.index })
+        .then(data => {
+          const boot = [];
+          let text = data.parse.text['*'];
+          text = text.replace(/<br\s*\/?>/gi, '\n');
+          const goalHeaders = [...text.matchAll(/<p><b>(\d+) goals?<\/b><\/p>/g)];
+          for (const gh of goalHeaders) {
+            const goals = parseInt(gh[1]);
+            const after = text.slice(gh.index + gh[0].length);
+            const nextHeader = after.search(/<p><b>\d+ goals?/);
+            const chunk = nextHeader > 0 ? after.slice(0, nextHeader) : after;
+            const players = [...chunk.matchAll(/title="([^"]+)"/g)].map(m => m[1]);
+            const realPlayers = players.filter(p =>
+              !p.includes('national football team') && !p.includes('flag') && p.length > 2 && !p.includes('Template'));
+            for (const p of realPlayers) boot.push({ name: p, goals });
+          }
+          return boot;
+        })
+        .catch(() => [])
+    : Promise.resolve([]);
 
+  const boot = await bootPromise;
   return [standings, boot];
 }
 
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 function stripHtml(html) {
   const txt = html.replace(/<[^>]+>/g, '').replace(/\u00a0/g, ' ').trim();
   return txt;
@@ -832,7 +839,7 @@ function cleanTeamName(raw) {
 }
 
 // ====== RENDER: AS THINGS STAND ======
-function renderStandings(lbData, picks, wikiStandings, wikiBoot, groupResults) {
+function renderStandings(picks, wikiStandings, wikiBoot, groupResults) {
   // Summary stats
   const totalGroups = GROUP_NAMES.length;
   let groupsFinished = 0;
