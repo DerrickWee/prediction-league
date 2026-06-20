@@ -718,10 +718,10 @@ function jsonpFetch(url, callbackName) {
     const sep = url.includes('?') ? '&' : '?';
     const script = document.createElement('script');
     script.id = 'jpi-' + callbackName;
-    script.src = url + sep + 'callback=' + cb + '&format=json&origin=*';
+    script.src = url + sep + 'callback=' + cb + '&format=json';
     script.onerror = () => { delete window[cb]; document.getElementById('jpi-' + callbackName)?.remove(); reject(new Error('JSONP failed')); };
     document.head.appendChild(script);
-    setTimeout(() => { if (window[cb]) { delete window[cb]; reject(new Error('Timeout')); } }, 15000);
+    setTimeout(() => { if (window[cb]) { delete window[cb]; reject(new Error('Timeout')); } }, 5000);
   });
 }
 
@@ -789,23 +789,11 @@ async function loadData() {
     renderPodium(lbData);
     renderLeaderboard(lbData);
     renderPicks(picks, groupResults);
+    renderStandings(picks, groupResults);
+    renderBracket();
     renderResults(groupResults);
     renderRules();
-
-    // Show content right away with empty standings placeholder
     showContent(lbData);
-
-    // Fetch Wikipedia data ASYNC in background (don't block rendering)
-    console.log('Starting Wikipedia data fetch...');
-    fetchAllGroups().then(([wikiStandings, wikiBoot]) => {
-      console.log('Wikipedia data loaded:', Object.keys(wikiStandings).length, 'groups,', wikiBoot.length, 'scorers');
-      renderStandings(picks, wikiStandings, wikiBoot, groupResults);
-      renderBracket(wikiStandings, picks);
-    }).catch(e => {
-      console.warn('Wikipedia fetch failed:', e);
-      renderStandings(picks, {}, [], groupResults);
-      renderBracket({}, picks);
-    });
   } catch (e) {
     console.error('Load failed:', e);
     // Check if it's a cache issue by looking for old code
@@ -910,94 +898,68 @@ function cleanTeamName(raw) {
 }
 
 // ====== RENDER: AS THINGS STAND ======
-function renderStandings(picks, wikiStandings, wikiBoot, groupResults) {
-  // Summary stats
-  const totalGroups = GROUP_NAMES.length;
-  let groupsFinished = 0;
-  for (const g of GROUP_NAMES) {
-    const t = wikiStandings[g];
-    if (t && t.length >= 4) {
-      const maxGames = t[0].pld;
-      if (maxGames >= 3) groupsFinished++;
-    }
-  }
-  const liveLeaders = {};
-  for (const g of GROUP_NAMES) {
-    const t = wikiStandings[g];
-    if (t && t.length > 0) liveLeaders[g] = t[0].name;
-  }
-
-  // Hypothetical scores — compare picks vs LIVE Wikipedia leaders
+function renderStandings(picks, groupResults) {
+  const confirmed = Object.keys(groupResults).length;
+  // Score picks against confirmed results
   const cmpRows = picks.map(p => {
     let correct = 0, wrong = 0;
     p.groups.forEach((pick, gi) => {
       const letter = GROUP_NAMES[gi];
-      const leader = liveLeaders[letter];
-      if (leader) {
-        if (pick.toLowerCase().trim() === leader.toLowerCase().trim()) correct++;
+      const winner = groupResults[letter];
+      if (winner) {
+        if (pick.toLowerCase().trim() === winner.toLowerCase().trim()) correct++;
         else wrong++;
-      } else {
-        wrong++; // no leader data yet
       }
     });
-    const score = correct * 10;
-    return { name: p.name, correct, wrong, score };
+    return { name: p.name, correct, wrong, score: correct * 10 };
   });
   cmpRows.sort((a, b) => b.score - a.score);
+  const bestScore = cmpRows.length > 0 ? cmpRows[0].score : 0;
+  const bestPlayer = cmpRows.length > 0 ? cmpRows[0].name : '—';
 
   // Summary cards
-  const maxHypo = cmpRows.length > 0 ? cmpRows[0].score : 0;
-  const bestPlayer = cmpRows.length > 0 ? cmpRows[0].name : '—';
   document.getElementById('ats-summary').innerHTML = `
     <div class="ats-stat">
-      <div class="num gold">${maxHypo}</div>
-      <div class="label">Leading Score (if ended today)</div>
+      <div class="num gold">${bestScore}</div>
+      <div class="label">Leading Score (confirmed)</div>
       <div style="font-size:13px;color:var(--text-dim);margin-top:4px;">${bestPlayer}</div>
     </div>
     <div class="ats-stat">
-      <div class="num pitch">${groupsFinished}/12</div>
-      <div class="label">Groups Decided</div>
+      <div class="num pitch">${confirmed}/12</div>
+      <div class="label">Groups Confirmed</div>
     </div>
     <div class="ats-stat">
-      <div class="num accent">${wikiBoot.length > 0 ? wikiBoot[0].goals : '—'}</div>
-      <div class="label">Goals (Top Scorer)</div>
-      <div style="font-size:13px;color:var(--text-dim);margin-top:4px;">${wikiBoot.length > 0 ? wikiBoot[0].name : '—'}</div>
+      <div class="num accent">${confirmed * 4}</div>
+      <div class="label">Matches Played</div>
     </div>
   `;
 
-  // Group standings grid
+  // Group standings — only show confirmed groups
   let gridHtml = '';
   for (const letter of GROUP_NAMES) {
-    const teams = wikiStandings[letter] || [];
-    if (teams.length === 0) {
-      gridHtml += `<div class="group-card"><div class="gc-header"><div class="label">Group ${letter}</div></div><div style="color:var(--text-muted);font-size:13px;padding:8px 0;">Loading…</div></div>`;
-      continue;
-    }
-    const leaderName = teams[0].name;
-    const isDone = teams[0].pld >= 3;
-    const playerPicks = picks.map(p => ({ name: p.name, pick: p.groups[GROUP_NAMES.indexOf(letter)] }));
-    const correctPickers = playerPicks.filter(pp => pp.pick.toLowerCase() === leaderName.toLowerCase()).map(pp => pp.name);
-
-    gridHtml += `<div class="group-card">
-      <div class="gc-header">
-        <div class="label">Group ${letter}</div>
-        <div class="status ${isDone ? 'done' : 'live'}">${isDone ? '✓ Decided' : '🔴 Live'}</div>
+    const winner = groupResults[letter];
+    if (winner) {
+      const pickers = picks.filter(p => p.groups[GROUP_NAMES.indexOf(letter)].toLowerCase() === winner.toLowerCase());
+      const pickerNames = pickers.map(p => p.name);
+      gridHtml += `<div class="group-card">
+        <div class="gc-header">
+          <div class="label">Group ${letter}</div>
+          <div class="status done">✓ Decided</div>
+        </div>
+        <div style="padding:6px 0;">
+          <div style="font-size:20px;font-weight:900;color:var(--pitch-light);">${winner}</div>
+        </div>
+        ${pickerNames.length > 0 ? `<div style="font-size:11px;color:var(--gold);padding-top:6px;border-top:1px solid var(--border);">✓ ${pickerNames.join(', ')}</div>` : ''}
       </div>`;
-    for (const t of teams) {
-      const isLeader = t.pos === 1;
-      const wasPicked = correctPickers.length > 0 && isLeader;
-      gridHtml += `<div class="team-row ${isLeader ? 'leader' : ''} ${wasPicked ? 'picked' : ''}">
-        <div class="pos">${t.pos}</div>
-        <div class="name">${t.name}</div>
-        <div class="pts">${t.pts}</div>
-      </div>`;
-    }
-    if (correctPickers.length > 0) {
-      gridHtml += `<div style="font-size:11px;color:var(--gold);margin-top:4px;padding-top:4px;border-top:1px solid rgba(42,58,64,0.3);">
-        ✓ ${correctPickers.join(', ')}
+    } else {
+      gridHtml += `<div class="group-card">
+        <div class="gc-header">
+          <div class="label">Group ${letter}</div>
+          <div class="status" style="color:var(--text-muted);font-size:11px;">⏳ Pending</div>
+        </div>
+        <div style="padding:12px 0;color:var(--text-muted);font-size:13px;">Waiting for results…</div>
       </div>`;
     }
-    gridHtml += `</div>`;
   }
   document.getElementById('standings-grid').innerHTML = gridHtml;
 
@@ -1011,18 +973,8 @@ function renderStandings(picks, wikiStandings, wikiBoot, groupResults) {
     </tr>
   `).join('');
 
-  // Golden boot (top scorers only — 2+ goals, max 20)
-  if (wikiBoot.length > 0) {
-    const topScorers = wikiBoot.filter(b => b.goals >= 2).slice(0, 20);
-    document.getElementById('boot-grid').innerHTML = (topScorers.length > 0 ? topScorers : wikiBoot.slice(0, 10)).map(b =>
-      `<div class="boot-card">
-        <div class="player-name">${b.name}</div>
-        <div class="goals">${b.goals}</div>
-      </div>`
-    ).join('') + (wikiBoot.filter(b => b.goals >= 2).length > 20 ? `<div style="color:var(--text-muted);font-size:12px;grid-column:1/-1;text-align:center;padding:8px;">+ ${wikiBoot.filter(b => b.goals >= 2).length - 20} more with 2+ goals</div>` : '');
-  } else {
-    document.getElementById('boot-grid').innerHTML = '<p style="color:var(--text-muted)">No data yet</p>';
-  }
+  // Golden boot tab — hide since we don't have live data
+  document.getElementById('boot-grid').innerHTML = '<p style="color:var(--text-muted);">Golden Boot data available once results are entered in the sheet.</p>';
 }
 
 // ====== RENDER: PODIUM ======
@@ -1071,118 +1023,12 @@ function renderPicks(picks, results) {
 }
 
 // ====== RENDER: BRACKET ======
-function renderBracket(wikiStandings, picks) {
-  const container = document.getElementById('bracket-container');
-
-  // Build leaders map from Wikipedia
-  const leaders = {};
-  for (const g of GROUP_NAMES) {
-    const t = wikiStandings[g];
-    if (t && t.length > 0) leaders[g] = t[0].name;
-  }
-
-  // Bracket structure: R32 matchups
-  // 2026 WC R32: 12 group winners + 12 runners-up + 8 best 3rd place
-  const r32 = [
-    ['Group A Winner', '3rd C/D/E'],
-    ['Group B Winner', '3rd A/D/E'],
-    ['Group C Winner', '3rd A/B/F'],
-    ['Group D Winner', '3rd A/B/E'],
-    ['Group E Winner', '3rd A/C/D'],
-    ['Group F Winner', '3rd B/C/D'],
-    ['Group G Winner', '3rd H/I/J'],
-    ['Group H Winner', '3rd G/I/J'],
-    ['Group I Winner', '3rd G/H/J'],
-    ['Group J Winner', '3rd G/H/I'],
-    ['Group K Winner', '3rd L/K/?'],
-    ['Group L Winner', '3rd K/L/?'],
-    ['Runner-up A', 'Runner-up C'],
-    ['Runner-up B', 'Runner-up F'],
-    ['Runner-up D', 'Runner-up E'],
-    ['Runner-up G', 'Runner-up I'],
-    ['Runner-up H', 'Runner-up J'],
-    ['Runner-up K', 'Runner-up L'],
-  ];
-
-  // For simplicity, show a 16-match R32 → R16 → QF → SF → Final
-  // Actually let's show a cleaner structure since the exact pairings depend on 3rd place qualifiers
-  // I'll show rounds as: R32 (16 matches) → R16 (8) → QF (4) → SF (2) → Final + 3rd Place
-
-  // Build the rounds more simply
-  const bracketRounds = [
-    { name: 'Round of 32', matches: 16, teamsPer: 2 },
-    { name: 'Round of 16', matches: 8, teamsPer: 2 },
-    { name: 'Quarter-Finals', matches: 4, teamsPer: 2 },
-    { name: 'Semi-Finals', matches: 2, teamsPer: 2 },
-    { name: 'Final', matches: 2, teamsPer: 2 },
-  ];
-
-  // For the bracket height: each R32 match has 2 teams.
-  // R32: 16 matches = 32 teams = 32 units
-  // R16: 8 matches, each spanning 4 units (2 original matches)
-  // QF: 4 matches, each spanning 8 units
-  // SF: 2 matches, each spanning 16 units
-  // Final: 1 match spanning 32 units, 3rd place match
-
-  // This is tricky to do with flexbox. Let me do a simpler approach.
-  // I'll just show each round as a column of match cards.
-
-  let html = '';
-
-  // R32 matches (show a subset since exact pairings are complex)
-  const r32Matches = [];
-  for (let i = 0; i < 12; i++) {
-    const letter = GROUP_NAMES[i];
-    const leader = leaders[letter] || `Group ${letter} Winner`;
-    r32Matches.push([leader, 'TBD (Runner-up)']);
-  }
-  // 4 more R32 slots from 3rd place
-  for (let i = 0; i < 4; i++) {
-    r32Matches.push(['TBD (Group W)', 'TBD (3rd)']);
-  }
-
-  // R16 pairings (simplified - 8 matches)
-  const r16Matches = Array(8).fill(['TBD', 'TBD']);
-  const qfMatches = Array(4).fill(['TBD', 'TBD']);
-  const sfMatches = Array(2).fill(['TBD', 'TBD']);
-  const finalMatch = ['TBD', 'TBD'];
-  const thirdPlace = ['TBD', 'TBD'];
-
-  function renderMatchColumn(label, matches) {
-    let col = `<div class="bracket-round"><div class="bracket-round-label">${label}</div>`;
-    for (const [t1, t2] of matches) {
-      const c1 = t1 === 'TBD' || t1.startsWith('TBD') || t1.startsWith('Group') ? 'tbd' : 'winner';
-      const c2 = t2 === 'TBD' || t2.startsWith('TBD') || t2.startsWith('Group') ? 'tbd' : 'winner';
-      col += `<div class="bracket-match">
-        <div class="team-line ${c1}"><span class="team-name">${t1}</span></div>
-        <div class="team-line ${c2}"><span class="team-name">${t2}</span></div>
-      </div>`;
-    }
-    col += '</div>';
-    return col;
-  }
-
-  html += renderMatchColumn('R32', r32Matches);
-  html += renderMatchColumn('R16', r16Matches);
-  html += renderMatchColumn('QF', qfMatches);
-  html += renderMatchColumn('SF', sfMatches);
-
-  // Final column: final + 3rd place
-  html += `<div class="bracket-round">
-    <div class="bracket-round-label">Final</div>
-    <div class="bracket-match final-match">
-      <div class="match-label">🏆 Final</div>
-      <div class="team-line tbd"><span class="team-name">TBD</span></div>
-      <div class="team-line tbd"><span class="team-name">TBD</span></div>
-    </div>
-    <div class="bracket-match" style="margin-top:12px;">
-      <div class="match-label">🥉 3rd Place</div>
-      <div class="team-line tbd"><span class="team-name">TBD</span></div>
-      <div class="team-line tbd"><span class="team-name">TBD</span></div>
-    </div>
+function renderBracket() {
+  document.getElementById('bracket-container').innerHTML = `<div style="text-align:center;padding:30px;color:var(--text-muted);">
+    <div style="font-size:40px;margin-bottom:10px;">🏟️</div>
+    <p style="font-size:15px;font-weight:600;color:var(--text-dim);">Bracket loading after group stage</p>
+    <p style="font-size:13px;margin-top:4px;">The knockout bracket will populate once group winners are confirmed and Phase 2a begins.</p>
   </div>`;
-
-  container.innerHTML = html;
 }
 
 // ====== RENDER: RESULTS (SHEET) ======
