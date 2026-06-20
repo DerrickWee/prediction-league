@@ -525,7 +525,8 @@
   </div>
   <div id="error" class="error-state" style="display:none;">
     <div class="icon">⚠️</div>
-    <p>Couldn't load data. Check that the sheet is published to the web.</p>
+    <p><strong>Couldn't load sheet data.</strong></p>
+    <p style="font-size:13px;color:var(--text-dim);margin-top:8px;">Try a hard refresh (<kbd>Cmd+Shift+R</kbd> / <kbd>Ctrl+F5</kbd>). If that doesn't work, disable ad blockers for this page or try Incognito mode.</p>
   </div>
 
   <div id="content" style="display:none;">
@@ -744,9 +745,13 @@ async function loadData() {
       renderBracket({}, picks);
     });
   } catch (e) {
-    console.error(e);
-    document.getElementById('loading').style.display = 'none';
+    console.error('Load failed:', e);
+    // Check if it's a cache issue by looking for old code
+    if (document.documentElement.innerHTML.includes('PUBLISHED_ID') || document.documentElement.innerHTML.includes('PapaParse')) {
+      console.warn('Detected OLD cached page version! Do a hard refresh.');
+    }
     document.getElementById('error').style.display = 'block';
+    document.getElementById('loading').style.display = 'none';
   }
 }
 
