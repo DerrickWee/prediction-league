@@ -948,14 +948,15 @@ function renderStandings(picks, wikiStandings, wikiBoot, groupResults) {
     </tr>
   `).join('');
 
-  // Golden boot
+  // Golden boot (top scorers only — 2+ goals, max 20)
   if (wikiBoot.length > 0) {
-    document.getElementById('boot-grid').innerHTML = wikiBoot.map(b =>
+    const topScorers = wikiBoot.filter(b => b.goals >= 2).slice(0, 20);
+    document.getElementById('boot-grid').innerHTML = (topScorers.length > 0 ? topScorers : wikiBoot.slice(0, 10)).map(b =>
       `<div class="boot-card">
         <div class="player-name">${b.name}</div>
         <div class="goals">${b.goals}</div>
       </div>`
-    ).join('');
+    ).join('') + (wikiBoot.filter(b => b.goals >= 2).length > 20 ? `<div style="color:var(--text-muted);font-size:12px;grid-column:1/-1;text-align:center;padding:8px;">+ ${wikiBoot.filter(b => b.goals >= 2).length - 20} more with 2+ goals</div>` : '');
   } else {
     document.getElementById('boot-grid').innerHTML = '<p style="color:var(--text-muted)">No data yet</p>';
   }
