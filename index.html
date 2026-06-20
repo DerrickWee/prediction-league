@@ -769,38 +769,32 @@ async function fetchAllGroups() {
   // Find goalscorers section
   const gsSection = sections.find(s => s.line === 'Goalscorers');
 
-  // Fetch all groups in parallel (no rate limiting needed from browser CORS)
-  const groupPromises = groupSections.map(gs => {
-    const letter = gs.line.replace('Group ', '').trim();
-    return wikiFetch({ action: 'parse', page: '2026_FIFA_World_Cup', prop: 'text', section: gs.index })
-      .then(data => {
-        const text = data.parse.text['*'];
-        const tableMatch = text.match(/<table[^>]*wikitable[^>]*>[\s\S]*?<\/table>/);
-        if (tableMatch) {
-          const rows = [...tableMatch[0].matchAll(/<tr>([\s\S]*?)<\/tr>/g)];
-          const teams = [];
-          for (let ri = 1; ri < rows.length; ri++) {
-            const cells = [...rows[ri][1].matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/g)].map(c => stripHtml(c[1]));
-            if (cells.length >= 10) {
-              teams.push({
-                pos: parseInt(cells[0]),
-                name: cleanTeamName(cells[1]),
-                pld: parseInt(cells[2]), w: parseInt(cells[3]), d: parseInt(cells[4]),
-                l: parseInt(cells[5]), pts: parseInt(cells[9]),
-              });
-            }
-          }
-          return { letter, teams };
-        }
-        return { letter, teams: [] };
-      })
-      .catch(() => ({ letter: gs.line.replace('Group ', '').trim(), teams: [] }));
-  });
-
-  const groupResults = await Promise.all(groupPromises);
+  // Fetch all groups sequentially (avoids Wikipedia rate limiting)
   const standings = {};
-  for (const gr of groupResults) {
-    standings[gr.letter] = gr.teams;
+  for (const gs of groupSections) {
+    await new Promise(r => setTimeout(r, 400));
+    try {
+      const data = await wikiFetch({ action: 'parse', page: '2026_FIFA_World_Cup', prop: 'text', section: gs.index });
+      const text = data.parse.text['*'];
+      const tableMatch = text.match(/<table[^>]*wikitable[^>]*>[\s\S]*?<\/table>/);
+      if (tableMatch) {
+        const rows = [...tableMatch[0].matchAll(/<tr>([\s\S]*?)<\/tr>/g)];
+        const teams = [];
+        for (let ri = 1; ri < rows.length; ri++) {
+          const cells = [...rows[ri][1].matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/g)].map(c => stripHtml(c[1]));
+          if (cells.length >= 10) {
+            teams.push({
+              pos: parseInt(cells[0]),
+              name: cleanTeamName(cells[1]),
+              pld: parseInt(cells[2]), w: parseInt(cells[3]), d: parseInt(cells[4]),
+              l: parseInt(cells[5]), pts: parseInt(cells[9]),
+            });
+          }
+        }
+        const letter = gs.line.replace('Group ', '').trim();
+        standings[letter] = teams;
+      }
+    } catch (e) { /* skip */ }
   }
 
   // Fetch goalscorers (parallel with groups)
