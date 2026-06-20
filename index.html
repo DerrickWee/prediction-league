@@ -656,15 +656,52 @@ const WIKI_API = 'https://en.wikipedia.org/w/api.php';
 const GIDS = { leaderboard: '605133495', picks: '0', results: '1996730532' };
 
 function gvizUrl(gid) {
-  return `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&gid=${gid}`;
+  return `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&tq=&gid=${gid}`;
 }
-async function fetchSheet(gid) {
-  const r = await fetch(gvizUrl(gid));
-  const text = await r.text();
-  // Strip JSONP wrapper: /*O_o*/google.visualization.Query.setResponse({...});
-  const json = JSON.parse(text.substring(text.indexOf('{'), text.lastIndexOf('}') + 1));
-  const rows = json.table.rows.map(row => row.c.map(c => c ? (c.v !== null && c.v !== undefined ? String(c.v) : '') : ''));
-  return rows;
+
+// Use JSONP via <script> tag injection — bypasses ALL CORS/fetch/cookie issues
+function fetchSheet(gid) {
+  return new Promise((resolve, reject) => {
+    const callbackName = '_gviz_' + gid + '_' + Date.now();
+    window[callbackName] = function(json) {
+      delete window[callbackName];
+      // Remove script tag
+      const s = document.getElementById('gviz-' + gid);
+      if (s) s.remove();
+      const rows = json.table.rows.map(row => row.c.map(c => c ? (c.v !== null && c.v !== undefined ? String(c.v) : '') : ''));
+      resolve(rows);
+    };
+
+    // Intercept the gviz callback
+    const origSetResponse = window.google?.visualization?.Query?.setResponse;
+    if (!window.google) window.google = {};
+    if (!window.google.visualization) window.google.visualization = {};
+    if (!window.google.visualization.Query) window.google.visualization.Query = {};
+    window.google.visualization.Query.setResponse = function(json) {
+      // Restore original if any
+      if (origSetResponse) window.google.visualization.Query.setResponse = origSetResponse;
+      const cb = window[callbackName];
+      if (cb) cb(json);
+    };
+
+    const script = document.createElement('script');
+    script.id = 'gviz-' + gid;
+    script.src = gvizUrl(gid);
+    script.onerror = () => {
+      delete window[callbackName];
+      document.getElementById('gviz-' + gid)?.remove();
+      reject(new Error('Script load failed for gid=' + gid));
+    };
+    document.head.appendChild(script);
+
+    // Timeout after 10s
+    setTimeout(() => {
+      if (window[callbackName]) {
+        delete window[callbackName];
+        reject(new Error('Timeout for gid=' + gid));
+      }
+    }, 10000);
+  });
 }
 function wikiFetch(params) {
   return fetch(WIKI_API + '?' + new URLSearchParams({...params, format: 'json', origin: '*'}).toString())
