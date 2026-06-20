@@ -705,9 +705,32 @@ function fetchSheet(gid) {
     }, 10000);
   });
 }
+// JSONP fetch (script injection) — works where fetch/CORS is blocked
+function jsonpFetch(url, callbackName) {
+  return new Promise((resolve, reject) => {
+    const cb = '_' + callbackName + '_' + Date.now();
+    window[cb] = function(data) {
+      delete window[cb];
+      const s = document.getElementById('jpi-' + callbackName);
+      if (s) s.remove();
+      resolve(data);
+    };
+    const sep = url.includes('?') ? '&' : '?';
+    const script = document.createElement('script');
+    script.id = 'jpi-' + callbackName;
+    script.src = url + sep + 'callback=' + cb + '&format=json&origin=*';
+    script.onerror = () => { delete window[cb]; document.getElementById('jpi-' + callbackName)?.remove(); reject(new Error('JSONP failed')); };
+    document.head.appendChild(script);
+    setTimeout(() => { if (window[cb]) { delete window[cb]; reject(new Error('Timeout')); } }, 15000);
+  });
+}
+
 function wikiFetch(params) {
-  return fetch(WIKI_API + '?' + new URLSearchParams({...params, format: 'json', origin: '*'}).toString())
-    .then(r => r.json());
+  const p = {...params};
+  delete p.format;
+  delete p.origin;
+  const url = WIKI_API + '?' + new URLSearchParams(p).toString();
+  return jsonpFetch(url, 'wiki');
 }
 
 // ====== TAB SWITCHING ======
