@@ -658,7 +658,7 @@ const GROUP_NAMES = ['A','B','C','D','E','F','G','H','I','J','K','L'];
 const PICK_COLS = { email: 0, groups: [1,2,3,4,5,6,7,8,9,10,11,12], boot: 13, glove: 14, name: 17 };
 
 function gvizUrl(gid, range, cb) {
-  let url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json;responseHandler:${cb}&tq=&gid=${gid}&_cb=${Date.now()}`;
+  let url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=${encodeURIComponent('out:json;responseHandler:' + cb)}&tq=&gid=${gid}&_cb=${Date.now()}`;
   if (range) url += `&range=${encodeURIComponent(range)}`;
   return url;
 }
