@@ -657,40 +657,28 @@ const GIDS = { leaderboard: '605133495', picks: '0', results: '1996730532' };
 const GROUP_NAMES = ['A','B','C','D','E','F','G','H','I','J','K','L'];
 const PICK_COLS = { email: 0, groups: [1,2,3,4,5,6,7,8,9,10,11,12], boot: 13, glove: 14, name: 17 };
 
-function gvizUrl(gid, range) {
-  let url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&tq=&gid=${gid}`;
+function gvizUrl(gid, range, cb) {
+  let url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json;responseHandler:${cb}&tq=&gid=${gid}&_cb=${Date.now()}`;
   if (range) url += `&range=${encodeURIComponent(range)}`;
   return url;
 }
 
 // Use JSONP via <script> tag injection — bypasses ALL CORS/fetch/cookie issues
+// Each request gets its OWN unique callback name to avoid race conditions
 function fetchSheet(gid, range) {
   return new Promise((resolve, reject) => {
-    const callbackName = '_gviz_' + gid + '_' + Date.now();
+    const callbackName = '_gv_' + gid + '_' + Date.now() + '_' + Math.floor(Math.random()*1e9);
     window[callbackName] = function(json) {
       delete window[callbackName];
-      // Remove script tag
       const s = document.getElementById('gviz-' + gid);
       if (s) s.remove();
       const rows = json.table.rows.map(row => row.c.map(c => c ? (c.v !== null && c.v !== undefined ? String(c.v) : '') : ''));
       resolve(rows);
     };
 
-    // Intercept the gviz callback
-    const origSetResponse = window.google?.visualization?.Query?.setResponse;
-    if (!window.google) window.google = {};
-    if (!window.google.visualization) window.google.visualization = {};
-    if (!window.google.visualization.Query) window.google.visualization.Query = {};
-    window.google.visualization.Query.setResponse = function(json) {
-      // Restore original if any
-      if (origSetResponse) window.google.visualization.Query.setResponse = origSetResponse;
-      const cb = window[callbackName];
-      if (cb) cb(json);
-    };
-
     const script = document.createElement('script');
     script.id = 'gviz-' + gid;
-    script.src = gvizUrl(gid, range);
+    script.src = gvizUrl(gid, range, callbackName);
     script.onerror = () => {
       delete window[callbackName];
       document.getElementById('gviz-' + gid)?.remove();
