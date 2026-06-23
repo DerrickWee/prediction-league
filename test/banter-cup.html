@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Banter Cup — WC2026 Prediction League</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --accent:#6b8afd;
+    --accentw:rgba(107,138,253,.16);
+    --accentb:rgba(107,138,253,.42);
+  }
+  html[data-theme="dark"]{
+    --bg:#0a0b0e;--panel:#111319;--panel2:#171a23;--line:#232733;
+    --fg:#eaecf1;--muted:#878d9b;--faint:#565c69;
+    --up:#2fcf8f;--down:#ff5d6c;--gold:#f5c451;--grid:#1b1e28;
+    --upw:rgba(47,207,143,.14);--downw:rgba(255,93,108,.14);
+  }
+  html[data-theme="light"]{
+    --bg:#f5f6f8;--panel:#ffffff;--panel2:#eef1f5;--line:#e2e6ec;
+    --fg:#14161b;--muted:#5c6675;--faint:#99a1ae;
+    --up:#0fa56a;--down:#e03a48;--gold:#b9851f;--grid:#e8ebf0;
+    --upw:rgba(15,165,106,.12);--downw:rgba(224,58,72,.11);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--bg);color:var(--fg);
+    font-family:'Hanken Grotesk',system-ui,sans-serif;-webkit-font-smoothing:antialiased;
+    min-height:100vh;transition:background .2s,color .2s;
+  }
+  .mono{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums}
+  @keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  ::-webkit-scrollbar{height:9px;width:9px}
+  ::-webkit-scrollbar-track{background:transparent}
+  ::-webkit-scrollbar-thumb{background:var(--line);border-radius:8px}
+
+  /* loading */
+  #loading-overlay{
+    position:fixed;inset:0;background:var(--bg);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    z-index:9999;gap:14px;
+  }
+  #loading-overlay.hidden{display:none}
+  .spinner{width:32px;height:32px;border:2.5px solid var(--line);border-top-color:var(--up);border-radius:50%;animation:spin .75s linear infinite}
+  .loading-text{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--muted);letter-spacing:.1em}
+  #error-overlay{
+    position:fixed;inset:0;background:var(--bg);
+    display:none;flex-direction:column;align-items:center;justify-content:center;
+    z-index:9998;gap:10px;text-align:center;padding:32px;
+  }
+  .error-icon{font-size:40px}
+  .error-title{font-size:18px;font-weight:700;color:var(--down)}
+  .error-desc{font-size:13px;color:var(--muted);max-width:340px;line-height:1.6}
+  #partial-error{
+    background:rgba(255,93,108,.07);border-bottom:1px solid rgba(255,93,108,.18);
+    padding:7px 18px;font-size:12px;color:var(--down);display:none;
+    font-family:'JetBrains Mono',monospace;letter-spacing:.04em;
+  }
+
+  /* header */
+  header.top{position:sticky;top:0;z-index:30;display:flex;flex-direction:column;
+    padding:0;background:var(--panel);border-bottom:1px solid var(--line)}
+  .hrow1{display:flex;align-items:center;justify-content:space-between;padding:11px 18px;gap:12px}
+  .hrow2{display:flex;border-top:1px solid var(--line);padding:0 18px;overflow-x:auto}
+  .brand{display:flex;align-items:center;gap:11px}
+  .mark{width:30px;height:30px;border-radius:8px;background:var(--accent);color:#0a0b0e;display:flex;
+    align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-weight:700;font-size:16px}
+  .wordmark{display:flex;flex-direction:column;line-height:1.1}
+  .wordmark b{font-family:'JetBrains Mono',monospace;font-weight:700;font-size:13px;letter-spacing:.14em}
+  .wordmark span{font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:.18em;color:var(--muted)}
+  nav.tabs{display:flex;gap:18px;white-space:nowrap}
+  nav.tabs button{position:relative;background:none;border:none;cursor:pointer;padding:11px 2px;white-space:nowrap;
+    font-family:'Hanken Grotesk',sans-serif;font-size:14px;font-weight:600;color:var(--muted);transition:color .15s}
+  nav.tabs button .ul{position:absolute;left:0;right:0;bottom:0;height:2px;border-radius:2px;background:transparent}
+  nav.tabs button.active{color:var(--fg)}
+  nav.tabs button.active .ul{background:var(--accent)}
+  .live{display:inline-flex;align-items:center;gap:6px;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--up)}
+  .live .dot{width:7px;height:7px;border-radius:50%;background:var(--up);animation:blink 1.6s infinite}
+  .ctrls{display:flex;align-items:center;gap:10px}
+  .swatches{display:flex;gap:6px}
+  .swatch{width:28px;height:28px;border-radius:7px;cursor:pointer;border:2px solid transparent;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-weight:700;font-size:10px;color:#0a0b0e;flex-shrink:0}
+  .swatch.on{border-color:var(--fg);box-shadow:0 0 0 2px var(--fg)}
+  .tbtn{background:var(--panel2);border:1px solid var(--line);border-radius:8px;cursor:pointer;color:var(--muted);
+    font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.1em;padding:7px 11px}
+
+  /* ticker */
+  .ticker{overflow:hidden;border-bottom:1px solid var(--line);background:var(--bg)}
+  .ticker .track{display:flex;gap:30px;white-space:nowrap;width:max-content;padding:9px 0;
+    animation:tick 42s linear infinite;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--muted)}
+  .ticker .it{display:inline-flex;gap:7px;align-items:center}
+  .ticker .it b{color:var(--fg);font-weight:600}
+
+  main{max-width:1200px;margin:0 auto;padding:26px 22px 80px}
+  h1.page{margin:0;font-size:25px;font-weight:800;letter-spacing:-.02em}
+  p.sub{margin:5px 0 0;color:var(--muted);font-size:14px}
+  .head{display:flex;align-items:flex-end;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:18px}
+
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px}
+  .pad{padding:18px}
+  .ptitle{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.16em;color:var(--muted)}
+  .pnote{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--faint)}
+
+  /* stat cards */
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(218px,1fr));gap:13px;margin-bottom:22px}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:15px 17px}
+  .stat .k{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.16em;color:var(--muted)}
+  .stat .v{font-size:21px;font-weight:700;margin-top:11px;letter-spacing:-.01em}
+  .stat .s{font-size:13px;margin-top:4px}
+
+  .twocol{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:18px;align-items:start}
+  .side{display:flex;flex-direction:column;gap:18px}
+
+  /* group markets */
+  .gm{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:10px}
+  .gcard{background:var(--panel2);border:1px solid var(--line);border-radius:11px;padding:11px 12px}
+  .gcard .row{display:flex;align-items:center;justify-content:space-between}
+  .gcard .glabel{font-family:'JetBrains Mono',monospace;font-weight:700;font-size:13px;color:var(--faint)}
+  .gcard .gcall{font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600}
+  .gcard .tk{font-family:'JetBrains Mono',monospace;font-weight:700;font-size:13px}
+  .bar{height:5px;background:var(--grid);border-radius:4px;overflow:hidden}
+  .bar>i{display:block;height:100%;border-radius:4px;background:var(--accent)}
+
+  /* leaderboard rows */
+  .lrow{display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid var(--line)}
+  .lrow:last-child{border-bottom:none}
+  .av{border-radius:8px;color:#0a0b0e;display:flex;align-items:center;justify-content:center;
+    font-family:'JetBrains Mono',monospace;font-weight:700;flex-shrink:0}
+
+  /* boot */
+  .boot{margin-bottom:13px}
+  .boot .r{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:5px}
+  .boot .by{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--faint);margin-top:5px}
+
+  /* leaderboard table */
+  .scroll{overflow-x:auto}
+  .lb{min-width:760px}
+  .lbgrid{display:grid;grid-template-columns:56px minmax(168px,1.4fr) 1fr 64px 58px 58px 58px 78px 120px;align-items:center}
+  .lbhead{padding:13px 18px;border-bottom:1px solid var(--line);
+    font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.13em;color:var(--muted)}
+  .lbhead .r{text-align:right}
+  .lbrow{padding:11px 18px;border-bottom:1px solid var(--line);border-left:2px solid transparent}
+  .lbrow.you{background:var(--accentw);border-left-color:var(--accent)}
+  .lbrow .num{font-family:'JetBrains Mono',monospace;text-align:right}
+  .copy-btn{background:var(--panel2);border:1px solid var(--line);border-radius:8px;cursor:pointer;color:var(--muted);
+    font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.1em;padding:7px 11px;transition:all .15s}
+  .copy-btn:hover{color:var(--fg)}
+  .copy-btn.copied{background:var(--upw);border-color:var(--up);color:var(--up)}
+
+  /* picks matrix */
+  .pm{min-width:920px}
+  .pmgrid{display:grid;grid-template-columns:160px repeat(14,minmax(44px,1fr));align-items:center}
+  .pmhead{border-bottom:1px solid var(--line);padding:0 4px}
+  .pmhead .t{padding:12px 14px;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.13em;color:var(--muted)}
+  .pmhead .c{padding:12px 0;text-align:center;font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--muted)}
+  .pmrow{border-bottom:1px solid var(--line);padding:0 4px}
+  .pmrow.you{background:var(--accentw)}
+  .pmcell{display:flex;align-items:center;justify-content:center;padding:6px 0}
+  .pmcell .mk{width:30px;height:26px;border-radius:6px;display:flex;align-items:center;justify-content:center;
+    font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600}
+  .legend{display:flex;gap:16px;font-family:'JetBrains Mono',monospace;font-size:11px}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .legend i{width:11px;height:11px;border-radius:3px;display:inline-block}
+
+  /* bracket */
+  .bk{position:relative;padding:22px;overflow:hidden}
+  .bkgrid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;opacity:.32;pointer-events:none}
+  .bkcol .h{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.12em;color:var(--muted);text-align:center;margin-bottom:12px}
+  .bkslot{background:var(--panel2);border:1px solid var(--line);border-radius:9px;height:42px;display:flex;
+    align-items:center;padding:0 12px;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--faint)}
+  .bklock{position:absolute;inset:0;display:flex;align-items:center;justify-content:center}
+  .bklock .card{background:var(--panel2);border:1px solid var(--accentb);border-radius:12px;padding:18px 26px;text-align:center}
+
+  /* results */
+  .glrow{display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid var(--line)}
+  .glrow:last-child{border-bottom:none}
+  .honour{background:var(--panel2);border:1px solid var(--line);border-radius:11px;padding:13px 14px;margin-bottom:10px}
+
+  /* rules */
+  .rules{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}
+  .rcard{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px}
+  .ritem{display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-top:1px solid var(--line)}
+  .badge{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.1em;border:1px solid currentColor;border-radius:5px;padding:2px 7px}
+  .note{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:15px 18px;margin-top:16px;font-size:13px;color:var(--muted)}
+</style>
+</head>
+<body>
+
+<div id="loading-overlay">
+  <div class="spinner"></div>
+  <div class="loading-text">FETCHING LIVE DATA…</div>
+</div>
+<div id="error-overlay">
+  <div class="error-icon">⚠️</div>
+  <div class="error-title">Could not load sheet data</div>
+  <div class="error-desc">Try a hard refresh (Cmd+Shift+R / Ctrl+F5). Check ad blockers aren't blocking Google APIs, or try Incognito mode.</div>
+</div>
+<div id="partial-error">⚠️ Partial load — <span id="partial-error-detail"></span></div>
+
+<header class="top">
+  <div class="hrow1">
+    <div class="brand">
+      <div class="mark">B</div>
+      <div class="wordmark"><b>BANTER CUP</b><span>WC2026 · PREDICTION LEAGUE</span></div>
+    </div>
+    <div class="ctrls">
+      <span class="live"><span class="dot"></span>LIVE</span>
+      <div class="swatches" id="swatches"></div>
+      <button class="tbtn" id="themeBtn">LIGHT</button>
+    </div>
+  </div>
+  <div class="hrow2"><nav class="tabs" id="tabs"></nav></div>
+</header>
+
+<div class="ticker"><div class="track" id="ticker"></div></div>
+
+<main id="app"></main>
+
+<script>
+/* ================================================================
+   BANTER CUP — WC2026 · Prediction League
+   Design: Claude Design trading-market aesthetic
+   Data:   Google Sheets JSONP (read-only)
+   ================================================================ */
+
+// ── CONFIG ───────────────────────────────────────────────────────
+const SHEET_ID   = '1_M2ATXhLvMNHNLD1SlvjpBmau-h4BWsEPysx2cX2WtI';
+const GIDS       = { leaderboard:'605133495', picks:'0', results:'1996730532' };
+const GROUP_NAMES = ['A','B','C','D','E','F','G','H','I','J','K','L'];
+const PICK_COLS  = { email:0, groups:[1,2,3,4,5,6,7,8,9,10,11,12], boot:13, glove:14, name:17 };
+const DEFAULT_YOU = 'derrick';
+
+const PLAYER_COLORS = {
+  'derrick':  '#2fcf8f',
+  'jin':      '#ff5d6c',
+  'nic choy': '#f5c451',
+  'glenn':    '#6b8afd',
+  'nic khoo': '#b48cff',
+};
+
+// Team name → ISO-2 for flag emoji
+const TEAM_ISO = {
+  'mexico':'MX','croatia':'HR','switzerland':'CH','serbia':'RS',
+  'brazil':'BR','cameroon':'CM','netherlands':'NL','senegal':'SN',
+  'germany':'DE','japan':'JP','portugal':'PT','uruguay':'UY',
+  'belgium':'BE','south korea':'KR','korea republic':'KR','spain':'ES',
+  'colombia':'CO','france':'FR','denmark':'DK','argentina':'AR',
+  'australia':'AU','ecuador':'EC','italy':'IT','nigeria':'NG',
+  'norway':'NO','usa':'US','united states':'US','morocco':'MA',
+  'england':'GB-ENG','wales':'GB-WLS','scotland':'GB-SCT',
+  'canada':'CA','saudi arabia':'SA','iran':'IR','poland':'PL',
+  'ghana':'GH','costa rica':'CR','tunisia':'TN','qatar':'QA',
+  'czech republic':'CZ','slovakia':'SK','hungary':'HU','romania':'RO',
+  'turkey':'TR','ukraine':'UA','austria':'AT','sweden':'SE',
+  'chile':'CL','paraguay':'PY','venezuela':'VE','peru':'PE',
+  'bolivia':'BO','panama':'PA','honduras':'HN','jamaica':'JM',
+  'egypt':'EG','algeria':'DZ','ivory coast':'CI',"cote d'ivoire":'CI',
+  'mali':'ML','guinea':'GN','south africa':'ZA','kenya':'KE',
+  'iraq':'IQ','united arab emirates':'AE','bahrain':'BH','oman':'OM',
+  'new zealand':'NZ','indonesia':'ID','vietnam':'VN','india':'IN',
+  'china':'CN','thailand':'TH','malaysia':'MY','philippines':'PH',
+};
+
+// ── STATIC DATA ───────────────────────────────────────────────────
+const BRACKET_COLS = [
+  {label:'ROUND OF 32',n:6},{label:'ROUND OF 16',n:4},
+  {label:'QUARTER-FINALS',n:2},{label:'SEMI-FINALS',n:2},{label:'FINAL',n:1}
+];
+const RULES = [
+  {ph:'PHASE 1', name:'Group Stage', status:'LIVE', sc:'var(--up)',
+   items:[['Correct group winner (A–L)','+10'],['12 groups total','120 max']]},
+  {ph:'PHASE 1', name:'Individual Awards', status:'LIVE', sc:'var(--up)',
+   items:[['Golden Boot','+20'],['Golden Glove','+20']]},
+  {ph:'PHASE 2A', name:'Knockout Rounds', status:'LOCKED', sc:'var(--faint)',
+   items:[['Round of 16 winner','+5'],['Quarter-final winner','+10'],['Semi-final winner','+25']]},
+  {ph:'PHASE 2B', name:'The Finals', status:'LOCKED', sc:'var(--faint)',
+   items:[['Correct finalist','+40'],['Correct champion','+60']]},
+];
+const HONOUR_CFG = [
+  {badge:'🏅',title:'Perfect Vision',  desc:'Most exact score predictions'},
+  {badge:'🎯',title:'Solo Prophet',    desc:'Only one to pick a winner — and nailed it'},
+  {badge:'📈',title:'Biggest Climb',   desc:'Most positions gained across the tournament'},
+  {badge:'🍵',title:'Wooden Spoon',    desc:'Last place — with love'},
+  {badge:'⚽',title:'Golden Eye',      desc:'Correct Golden Boot prediction'},
+  {badge:'🧤',title:'Safe Hands',      desc:'Correct Golden Glove prediction'},
+];
+const TABS = [
+  ['standings','Standings'],['leaderboard','Leaderboard'],['picks','Picks'],
+  ['bracket','Bracket'],['results','Results'],['rules','Rules']
+];
+
+// ── RUNTIME DATA ──────────────────────────────────────────────────
+let PLAYERS      = [];   // [{id,name,p1,p2a,p2b,p2c,total,c,you}]
+let PICKS_MAP    = {};   // {name_lower:{name,groups:[],boot,glove}}
+let GROUP_RESULTS = {};  // {A:'Mexico',B:'Switzerland',...}
+let BOOT_DATA    = [];   // [{name,goals,pickers:[]}]
+let GROUPS       = [];   // [{g,lead,confirmed,ok}]
+let LAST_SYNC    = '';
+
+// ── HELPERS ───────────────────────────────────────────────────────
+function san(s){
+  const d=document.createElement('div');
+  d.appendChild(document.createTextNode(String(s||'')));
+  return d.innerHTML;
+}
+function nt(n){
+  const aliases={'usa':'united states','u.s.a.':'united states','us':'united states',
+    'south korea':'korea republic','uk':'england'};
+  const l=(n||'').toLowerCase().trim();
+  return aliases[l]||l;
+}
+function pc(name){
+  return PLAYER_COLORS[(name||'').toLowerCase()] || '#9aa0ad';
+}
+function ini(name){
+  return (name||'').split(' ').map(w=>w[0]||'').slice(0,2).join('').toUpperCase();
+}
+function flag(name){
+  if(!name) return '';
+  const iso=TEAM_ISO[(name||'').toLowerCase().trim()];
+  if(!iso) return '';
+  if(iso==='GB-ENG') return '🏴󠁧󠁢󠁥󠁮󠁧󠁿';
+  if(iso==='GB-WLS') return '🏴󠁧󠁢󠁷󠁬󠁳󠁿';
+  if(iso==='GB-SCT') return '🏴󠁧󠁢󠁳󠁣󠁴󠁿';
+  return iso.toUpperCase().split('').map(c=>String.fromCodePoint(c.charCodeAt(0)+127397)).join('');
+}
+function miniBar(val,maxVal,col){
+  const pct=maxVal>0?Math.round(val/maxVal*100):0;
+  return `<div style="display:flex;align-items:center;gap:8px;padding:0 4px">
+    <div class="bar" style="flex:1"><i style="width:${pct}%;background:${col}"></i></div>
+    <span class="mono" style="font-size:10px;color:var(--muted)">${val}</span>
+  </div>`;
+}
+function cellOk(ok){
+  if(ok===true)  return ['var(--upw)','var(--up)','✓'];
+  if(ok===false) return ['var(--downw)','var(--down)','✕'];
+  return ['var(--panel2)','var(--faint)','·'];
+}
+function hexToRgba(hex,a){
+  hex=hex.replace('#','');
+  if(hex.length===3) hex=hex.split('').map(c=>c+c).join('');
+  const n=parseInt(hex,16);
+  return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`;
+}
+
+// ── GOOGLE SHEETS JSONP ───────────────────────────────────────────
+function gvizUrl(gid,range,cb){
+  let u=`https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=${encodeURIComponent('out:json;responseHandler:'+cb)}&tq=&gid=${gid}&_cb=${Date.now()}`;
+  if(range) u+=`&range=${encodeURIComponent(range)}`;
+  return u;
+}
+function fetchSheet(gid,range){
+  return new Promise((res,rej)=>{
+    const uid=gid+(range?'_r':'')+'_'+Date.now()+'_'+Math.floor(Math.random()*1e9);
+    const cb='_gv_'+uid;
+    const sid='gviz-'+uid;
+    window[cb]=function(json){
+      delete window[cb];
+      document.getElementById(sid)?.remove();
+      try{
+        res(json.table.rows.map(r=>r.c.map(c=>c?(c.v!=null?String(c.v):''):'')));
+      }catch(e){ rej(new Error('Parse error gid='+gid)); }
+    };
+    const s=document.createElement('script');
+    s.id=sid;
+    s.src=gvizUrl(gid,range,cb);
+    s.onerror=()=>{ delete window[cb]; s.remove(); rej(new Error('Load error gid='+gid)); };
+    document.head.appendChild(s);
+    setTimeout(()=>{ if(window[cb]){ delete window[cb]; rej(new Error('Timeout gid='+gid)); }},10000);
+  });
+}
+
+// ── PARSERS ───────────────────────────────────────────────────────
+function parseLeaderboard(rows){
+  const out=[];
+  for(const row of rows){
+    if(!row||row.length<2) continue;
+    const first=(row[0]||'').trim();
+    if(!first||first.startsWith('🏆')||first.toLowerCase()==='rank'||isNaN(parseInt(first))) continue;
+    out.push({
+      rank:parseInt(first), name:(row[1]||'').trim(),
+      p1:parseInt(row[2])||0, p2a:parseInt(row[3])||0,
+      p2b:parseInt(row[4])||0, p2c:parseInt(row[5])||0,
+      total:parseInt(row[6])||parseInt(row[2])||0
+    });
+  }
+  return out;
+}
+
+function parsePicks(rows){
+  const out={};
+  for(const row of rows){
+    if(!row||row.length<3) continue;
+    const name=(row[PICK_COLS.name]||'').trim();
+    const email=(row[PICK_COLS.email]||'').trim();
+    if(!name||name.toLowerCase()==='display name'||email.toLowerCase()==='email') continue;
+    out[name.toLowerCase()]={
+      name,
+      groups:PICK_COLS.groups.map(g=>(row[g]||'').trim()),
+      boot:(row[PICK_COLS.boot]||'').trim(),
+      glove:(row[PICK_COLS.glove]||'').trim()
+    };
+  }
+  return out;
+}
+
+function parseGroupWinners(rows){
+  const out={};
+  for(const row of rows){
+    if(!row||row.length<2) continue;
+    const a=(row[0]||'').trim(), b=(row[1]||'').trim();
+    if(a.startsWith('Group ')&&b) out[a.replace('Group ','').trim()]=b;
+  }
+  return out;
+}
+
+function parseBootData(rows){
+  const boot=[];
+  let inBoot=false;
+  for(const row of rows){
+    if(!row||row.length<2) continue;
+    const cell0=(row[0]||'').trim();
+    if(cell0.toUpperCase().startsWith('GOLDEN BOOT')){ inBoot=true; continue; }
+    if(inBoot&&row[0]&&row[1]&&row[2]&&!isNaN(parseInt(row[0]))){
+      const name=row[1].trim(), goals=parseInt(row[2])||0;
+      const pickers=Object.values(PICKS_MAP).filter(p=>nt(p.boot)===nt(name)).map(p=>p.name);
+      boot.push({name,goals,pickers});
+    }
+  }
+  return boot.sort((a,b)=>b.goals-a.goals);
+}
+
+// ── DATA BUILDERS ─────────────────────────────────────────────────
+function buildPlayers(lbData){
+  return lbData.map((row,i)=>({
+    id:i+1, name:row.name, p1:row.p1, p2a:row.p2a, p2b:row.p2b, p2c:row.p2c,
+    total:row.total, c:pc(row.name),
+    you: row.name.toLowerCase()===state.youName.toLowerCase()
+  }));
+}
+
+function buildGroups(){
+  const youPicks=PICKS_MAP[state.youName.toLowerCase()];
+  return GROUP_NAMES.map((letter,idx)=>{
+    const lead=GROUP_RESULTS[letter]||null;
+    const confirmed=!!lead;
+    const youPick=youPicks?youPicks.groups[idx]:null;
+    let ok=null;
+    if(confirmed&&youPick) ok=nt(youPick)===nt(lead);
+    else if(confirmed&&!youPick) ok=false;
+    return {g:letter,lead,confirmed,ok};
+  });
+}
+
+// ── CHROME ────────────────────────────────────────────────────────
+function renderTabs(active){
+  document.getElementById('tabs').innerHTML=TABS.map(([k,l])=>
+    `<button class="${k===active?'active':''}" data-tab="${k}">${l}<span class="ul"></span></button>`).join('');
+  document.getElementById('tabs').querySelectorAll('button').forEach(b=>b.onclick=()=>{
+    state.tab=b.dataset.tab; render();
+  });
+}
+
+function renderSwatches(){
+  document.getElementById('swatches').innerHTML=PLAYERS.slice(0,6).map(p=>
+    `<span class="swatch ${p.you?'on':''}" data-name="${san(p.name)}" style="background:${p.c}" title="${san(p.name)}">${ini(p.name)}</span>`
+  ).join('');
+  document.getElementById('swatches').querySelectorAll('.swatch').forEach(s=>s.onclick=()=>{
+    state.youName=s.dataset.name;
+    PLAYERS=PLAYERS.map(p=>({...p,you:p.name.toLowerCase()===state.youName.toLowerCase()}));
+    GROUPS=buildGroups();
+    applyAccent(); renderSwatches(); render();
+  });
+}
+
+function applyAccent(){
+  const you=PLAYERS.find(p=>p.you)||PLAYERS[0];
+  if(!you) return;
+  const col=you.c;
+  document.documentElement.style.setProperty('--accent',col);
+  document.documentElement.style.setProperty('--accentw',hexToRgba(col,state.theme==='dark'?.16:.10));
+  document.documentElement.style.setProperty('--accentb',hexToRgba(col,.42));
+}
+
+function renderTicker(){
+  const tag=(t,col)=>`<span class="mono" style="font-size:9px;letter-spacing:.12em;color:${col||'var(--faint)'};border:1px solid currentColor;border-radius:3px;padding:1px 4px;margin-right:5px">${t}</span>`;
+  const grp=Object.entries(GROUP_RESULTS).map(([g,w])=>
+    `<span class="it">${tag('GRP '+g)}<span style="font-size:14px;margin-right:3px">${flag(w)}</span><b>${san(w)}</b></span>`);
+  const bt=BOOT_DATA.slice(0,5).map(b=>
+    `<span class="it">${tag('BOOT','var(--gold)')}<b>${san(b.name)}</b><span class="mono" style="color:var(--gold)">${b.goals}G</span></span>`);
+  const lb=PLAYERS.slice(0,5).map((p,i)=>
+    `<span class="it">${tag('P'+(i+1),'var(--accent)')}<b>${san(p.name.split(' ')[0])}</b><span class="mono" style="color:var(--accent)">${p.total}pts</span></span>`);
+  const all=[...grp,...bt,...lb];
+  if(!all.length){ document.getElementById('ticker').innerHTML=''; return; }
+  const base=all.join('');
+  document.getElementById('ticker').innerHTML=base+base;
+}
+
+// ── VIEWS ─────────────────────────────────────────────────────────
+function viewStandings(){
+  const settled=Object.keys(GROUP_RESULTS).length;
+  const leader=PLAYERS[0];
+  const you=PLAYERS.find(p=>p.you)||PLAYERS[0];
+  const youPicks=PICKS_MAP[(you?.name||'').toLowerCase()];
+  let yourCorrect=0;
+  if(youPicks) GROUP_NAMES.forEach((l,i)=>{
+    if(GROUP_RESULTS[l]&&nt(youPicks.groups[i])===nt(GROUP_RESULTS[l])) yourCorrect++;
+  });
+
+  const statCards=[
+    {k:'TOURNAMENT PHASE', v:'1 / 4',                s:'Group Stage · Live',        col:'var(--up)'},
+    {k:'CURRENT LEADER',   v:leader?san(leader.name):'—', s:leader?(leader.total+' pts'):'', col:'var(--accent)'},
+    {k:'GROUPS SETTLED',   v:settled+' / 12',         s:'group winners confirmed',   col:'var(--muted)'},
+    {k:'YOUR CORRECT',     v:yourCorrect+' / 12',     s:'picks nailed so far',       col:'var(--up)'},
+  ].map(s=>`<div class="stat"><div class="k">${s.k}</div><div class="v" style="color:${s.col}">${s.v}</div><div class="s" style="color:${s.col}">${s.s}</div></div>`).join('');
+
+  const gcards=GROUPS.map(c=>{
+    if(!c.confirmed){
+      return `<div class="gcard">
+        <div class="row" style="margin-bottom:9px">
+          <span class="glabel">GRP ${c.g}</span>
+          <span class="gcall" style="color:var(--faint)">OPEN</span>
+        </div>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--faint)">Pending…</span>
+      </div>`;
+    }
+    const callColor=c.ok===true?'var(--up)':c.ok===false?'var(--down)':'var(--faint)';
+    const callLabel=c.ok===true?'✓ CORRECT':c.ok===false?'✕ WRONG':'OPEN';
+    return `<div class="gcard">
+      <div class="row" style="margin-bottom:9px">
+        <span class="glabel">GRP ${c.g}</span>
+        <span class="gcall" style="color:${callColor}">${callLabel}</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:5px">
+        <span style="font-size:16px;line-height:1">${flag(c.lead)}</span>
+        <span class="tk">${san(c.lead)}</span>
+      </div>
+    </div>`;
+  }).join('');
+
+  const top5=PLAYERS.slice(0,5).map((p,i)=>`
+    <div class="lrow" style="${p.you?'background:var(--accentw);border-left:2px solid var(--accent);margin-left:-2px;padding-left:14px;border-radius:0 8px 8px 0':''}">
+      <span class="mono" style="font-size:13px;color:var(--faint);width:20px">${String(i+1).padStart(2,'0')}</span>
+      <div class="av" style="width:28px;height:28px;font-size:11px;background:${p.c}">${ini(p.name)}</div>
+      <span style="flex:1;font-weight:600;font-size:14px">${san(p.name)}${p.you?' <span class="mono" style="font-size:10px;color:var(--accent)">YOU</span>':''}</span>
+      <span class="mono" style="font-weight:700;font-size:15px;width:38px;text-align:right">${p.total}</span>
+    </div>`).join('');
+
+  const bootHtml=BOOT_DATA.length
+    ? BOOT_DATA.map(b=>`
+      <div class="boot">
+        <div class="r">
+          <span style="font-size:13.5px;font-weight:600">${san(b.name)} <span style="font-size:14px">${flag(b.name)}</span></span>
+          <span class="mono" style="font-weight:700;font-size:14px;color:var(--gold)">${b.goals}G</span>
+        </div>
+        <div class="bar"><i style="width:${Math.round(b.goals/(BOOT_DATA[0]?.goals||1)*100)}%;background:var(--gold)"></i></div>
+        ${b.pickers.length?`<div class="by">backed by ${b.pickers.map(n=>san(n)).join(' · ')}</div>`:''}
+      </div>`).join('')
+    : `<p class="mono" style="font-size:11px;color:var(--faint)">No scorer data yet.</p>`;
+
+  return `
+    <div class="stats">${statCards}</div>
+    <div class="twocol">
+      <div class="panel pad">
+        <div class="head" style="margin-bottom:15px">
+          <span class="ptitle">GROUP LEADERS</span>
+          <span class="pnote">${settled}/12 settled</span>
+        </div>
+        <div class="gm">${gcards}</div>
+      </div>
+      <div class="side">
+        <div class="panel pad"><div class="ptitle" style="margin-bottom:13px">TOP 5 — LEADERBOARD</div>${top5}</div>
+        <div class="panel pad">
+          <div class="head" style="margin-bottom:14px"><span class="ptitle">GOLDEN BOOT RACE</span><span class="pnote">goals</span></div>
+          ${bootHtml}
+        </div>
+      </div>
+    </div>`;
+}
+
+function viewLeaderboard(){
+  const maxTotal=Math.max(...PLAYERS.map(p=>p.total),1);
+  const medals=['🥇','🥈','🥉'];
+  const rows=PLAYERS.map((p,i)=>`
+    <div class="lbgrid lbrow ${p.you?'you':''}">
+      <span class="mono" style="font-weight:700;font-size:15px">${i<3?medals[i]:String(i+1).padStart(2,'0')}</span>
+      <div style="display:flex;align-items:center;gap:11px">
+        <div class="av" style="width:34px;height:34px;font-size:12px;background:${p.c}">${ini(p.name)}</div>
+        <span style="font-weight:600;font-size:14px">${san(p.name)}${p.you?' <span class="mono" style="font-size:10px;color:var(--accent)">YOU</span>':''}</span>
+      </div>
+      <div>${miniBar(p.total,maxTotal,p.c)}</div>
+      <span class="num" style="font-size:14px">${p.p1}</span>
+      <span class="num" style="font-size:13px;color:var(--faint)">${p.p2a||'—'}</span>
+      <span class="num" style="font-size:13px;color:var(--faint)">${p.p2b||'—'}</span>
+      <span class="num" style="font-size:13px;color:var(--faint)">${p.p2c||'—'}</span>
+      <span class="num" style="font-weight:700;font-size:16px">${p.total}</span>
+      <div>
+        <div class="bar"><i style="width:${Math.round(p.total/maxTotal*100)}%;background:${p.c}"></i></div>
+        <span class="mono" style="font-size:10px;color:var(--muted)">${Math.round(p.total/maxTotal*100)}%</span>
+      </div>
+    </div>`).join('');
+
+  return `
+    <div class="head">
+      <div><h1 class="page">Leaderboard</h1><p class="sub">${PLAYERS.length} players · Phase 1 running · cumulative points</p></div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <button class="copy-btn" id="copy-lb-btn" onclick="copyLeaderboard()">📋 COPY</button>
+        <span class="mono" style="font-size:11px;color:var(--faint)">${LAST_SYNC}</span>
+      </div>
+    </div>
+    <div class="panel" style="overflow:hidden">
+      <div class="scroll"><div class="lb">
+        <div class="lbgrid lbhead">
+          <span>RANK</span><span>PLAYER</span><span>PROGRESS</span>
+          <span class="r">P1</span><span class="r">2A</span><span class="r">2B</span><span class="r">2C</span>
+          <span class="r">TOTAL</span><span>FORM</span>
+        </div>
+        ${rows}
+      </div></div>
+    </div>
+    <p class="mono" style="font-size:10.5px;color:var(--faint);margin-top:13px">
+      FORM = pts / max possible so far · Phase 2A/2B/2C columns unlock as tournament progresses
+    </p>`;
+}
+
+function viewPicks(){
+  const head=`<div class="pmgrid pmhead">
+    <span class="t">PLAYER</span>
+    ${GROUP_NAMES.map(g=>`<span class="c">GRP ${g}</span>`).join('')}
+    <span class="c">⚽</span><span class="c">🧤</span>
+  </div>`;
+
+  const rows=PLAYERS.map(p=>{
+    const picks=PICKS_MAP[p.name.toLowerCase()];
+    let cells='';
+    GROUP_NAMES.forEach((letter,i)=>{
+      const pick=picks?picks.groups[i]:'';
+      const actual=GROUP_RESULTS[letter];
+      let ok=null;
+      if(actual&&pick) ok=nt(pick)===nt(actual);
+      else if(actual&&!pick) ok=false;
+      const [bg,fg,mk]=cellOk(ok);
+      cells+=`<div class="pmcell" title="${san(pick||'—')}"><span class="mk" style="background:${bg};color:${fg}">${mk}</span></div>`;
+    });
+    const bPick=picks?picks.boot:'';
+    const gPick=picks?picks.glove:'';
+    cells+=`<div class="pmcell" title="${san(bPick)}"><span class="mk" style="background:var(--panel2);color:var(--muted);font-size:9px;white-space:nowrap;padding:2px">${bPick?san(bPick.split(' ').slice(-1)[0]):'·'}</span></div>`;
+    cells+=`<div class="pmcell" title="${san(gPick)}"><span class="mk" style="background:var(--panel2);color:var(--muted);font-size:9px;white-space:nowrap;padding:2px">${gPick?san(gPick.split(' ').slice(-1)[0]):'·'}</span></div>`;
+    return `<div class="pmgrid pmrow ${p.you?'you':''}">
+      <div style="display:flex;align-items:center;gap:9px;padding:8px 14px">
+        <div class="av" style="width:24px;height:24px;font-size:10px;background:${p.c}">${ini(p.name)}</div>
+        <span style="font-size:13px;font-weight:600;white-space:nowrap">${san(p.name)}</span>
+      </div>${cells}</div>`;
+  }).join('');
+
+  return `
+    <div class="head">
+      <div><h1 class="page">Picks</h1><p class="sub">Every Phase 1 call, settled against confirmed group leaders.</p></div>
+      <div class="legend">
+        <span style="color:var(--up)"><i style="background:var(--upw);border:1px solid var(--up)"></i>HIT</span>
+        <span style="color:var(--down)"><i style="background:var(--downw);border:1px solid var(--down)"></i>MISS</span>
+        <span style="color:var(--faint)"><i style="background:var(--panel2);border:1px solid var(--line)"></i>OPEN</span>
+      </div>
+    </div>
+    <div class="panel" style="overflow:hidden"><div class="scroll"><div class="pm">${head}${rows}</div></div></div>`;
+}
+
+function viewBracket(){
+  const cols=BRACKET_COLS.map(col=>`
+    <div class="bkcol"><div class="h">${col.label}</div>
+      ${Array.from({length:col.n}).map(()=>`<div class="bkslot">—</div>`).join('')}
+    </div>`).join('');
+  return `
+    <div class="head"><div><h1 class="page">Knockout Stage</h1>
+      <p class="sub">Bracket picks open when the group stage is fully settled.</p></div></div>
+    <div class="panel bk">
+      <div class="bkgrid">${cols}</div>
+      <div class="bklock"><div class="card">
+        <div class="mono" style="font-size:12px;letter-spacing:.1em;color:var(--accent)">NOT YET OPEN</div>
+        <div style="font-size:15px;font-weight:600;margin-top:8px">Opens when group stage settles</div>
+        <div class="mono" style="font-size:11px;color:var(--muted);margin-top:5px">est. ~27 Jun 2026</div>
+      </div></div>
+    </div>`;
+}
+
+function viewResults(){
+  const leaders=GROUP_NAMES.map(letter=>{
+    const w=GROUP_RESULTS[letter];
+    const youPicks=PICKS_MAP[state.youName.toLowerCase()];
+    const youPick=youPicks?youPicks.groups[GROUP_NAMES.indexOf(letter)]:'';
+    const ok=w&&youPick?nt(youPick)===nt(w):null;
+    return `<div class="glrow">
+      <span class="mono" style="font-weight:700;font-size:12px;color:var(--faint);width:48px">GRP ${letter}</span>
+      ${w?`<span style="font-size:18px;line-height:1">${flag(w)}</span>`:''}
+      <span style="font-weight:600;font-size:14px;flex:1">${w?san(w):'—'}</span>
+      ${w?`<span class="mono" style="font-size:11px;color:${ok===true?'var(--up)':'var(--down)'}">
+        ${ok===true?'✓ you':'✕ you'}</span>`
+        :`<span class="mono" style="font-size:11px;color:var(--faint)">pending</span>`}
+    </div>`;
+  }).join('');
+
+  const honours=HONOUR_CFG.map(h=>`
+    <div class="honour">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
+        <span style="font-weight:700;font-size:14px">${h.badge} ${h.title}</span>
+        <span class="mono" style="font-size:10px;color:var(--faint)">UNCLAIMED</span>
+      </div>
+      <div style="font-size:12.5px;color:var(--muted)">${h.desc}</div>
+    </div>`).join('');
+
+  return `
+    <div class="head"><div><h1 class="page">Results &amp; Honours</h1>
+      <p class="sub">Group leaders updated daily from live sheet · Honours unlock end-of-tournament.</p></div></div>
+    <div class="twocol">
+      <div class="panel pad"><div class="ptitle" style="margin-bottom:14px">GROUP LEADERS</div>${leaders}</div>
+      <div class="panel pad"><div class="ptitle" style="margin-bottom:14px">HONOUR ROLL</div>${honours}</div>
+    </div>`;
+}
+
+function viewRules(){
+  const cards=RULES.map(r=>`
+    <div class="rcard">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+        <span class="mono" style="font-size:10.5px;letter-spacing:.14em;color:var(--muted)">${r.ph}</span>
+        <span class="badge" style="color:${r.sc}">${r.status}</span>
+      </div>
+      <div style="font-size:18px;font-weight:700;margin-bottom:13px">${r.name}</div>
+      ${r.items.map(([l,pts])=>`<div class="ritem">
+        <span style="font-size:13.5px">${l}</span>
+        <span class="mono" style="font-weight:700;font-size:14px;color:var(--accent)">${pts}</span>
+      </div>`).join('')}
+    </div>`).join('');
+  return `
+    <div class="head"><div><h1 class="page">Scoring</h1>
+      <p class="sub">Four phases. Points accumulate as each stage settles. Highest total lifts the trophy.</p></div></div>
+    <div class="rules">${cards}</div>
+    <div class="note">
+      <span class="mono" style="font-size:11px;letter-spacing:.1em;color:var(--fg)">TIEBREAK&nbsp;&nbsp;</span>
+      Total correct calls, then earliest lock time. Data syncs daily from Google Sheets.
+    </div>`;
+}
+
+const VIEWS={standings:viewStandings,leaderboard:viewLeaderboard,picks:viewPicks,bracket:viewBracket,results:viewResults,rules:viewRules};
+
+// ── COPY ──────────────────────────────────────────────────────────
+function copyLeaderboard(){
+  let text='🏆 BANTER CUP — LEADERBOARD\n'+'═'.repeat(28)+'\n';
+  PLAYERS.forEach((p,i)=>{ text+=`${i+1}. ${p.name} — ${p.total}pts\n`; });
+  text+='\n📡 '+LAST_SYNC;
+  try{ navigator.clipboard.writeText(text); }
+  catch(_){
+    const ta=document.createElement('textarea'); ta.value=text;
+    document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
+  }
+  const btn=document.getElementById('copy-lb-btn');
+  if(btn){ btn.textContent='✅ COPIED!'; btn.classList.add('copied'); setTimeout(()=>{ btn.textContent='📋 COPY'; btn.classList.remove('copied'); },2000); }
+}
+
+// ── STATE & RENDER ────────────────────────────────────────────────
+const state={tab:'standings',theme:'dark',youName:DEFAULT_YOU};
+
+function render(){
+  renderTabs(state.tab);
+  document.getElementById('app').innerHTML=VIEWS[state.tab]();
+  window.scrollTo({top:0});
+}
+
+// ── MAIN ──────────────────────────────────────────────────────────
+async function loadData(){
+  let lbRaw=[],picksRaw=[],resultsRaw=[],gwRaw=[];
+  const errs=[];
+
+  await Promise.all([
+    fetchSheet(GIDS.leaderboard).then(r=>lbRaw=r).catch(e=>errs.push('Leaderboard: '+e.message)),
+    fetchSheet(GIDS.picks).then(r=>picksRaw=r).catch(e=>errs.push('Picks: '+e.message)),
+    fetchSheet(GIDS.results).then(r=>resultsRaw=r).catch(e=>errs.push('Results: '+e.message)),
+    fetchSheet(GIDS.results,'A5:B16').then(r=>gwRaw=r).catch(e=>errs.push('GroupWinners: '+e.message)),
+  ]);
+
+  if(!lbRaw.length&&!picksRaw.length){
+    document.getElementById('loading-overlay').classList.add('hidden');
+    document.getElementById('error-overlay').style.display='flex';
+    return;
+  }
+  if(errs.length){
+    document.getElementById('partial-error').style.display='block';
+    document.getElementById('partial-error-detail').textContent=errs.join(' · ');
+  }
+
+  PICKS_MAP=parsePicks(picksRaw);
+  GROUP_RESULTS=parseGroupWinners(gwRaw);
+  BOOT_DATA=parseBootData(resultsRaw);
+
+  const lbParsed=parseLeaderboard(lbRaw);
+  PLAYERS=buildPlayers(lbParsed);
+  GROUPS=buildGroups();
+
+  const now=new Date();
+  LAST_SYNC='Synced '+now.toLocaleString('en-SG',{timeZone:'Asia/Singapore',dateStyle:'medium',timeStyle:'short'})+' SGT';
+
+  applyAccent();
+  renderSwatches();
+  renderTicker();
+  render();
+  document.getElementById('loading-overlay').classList.add('hidden');
+}
+
+// ── INIT ──────────────────────────────────────────────────────────
+document.getElementById('themeBtn').onclick=function(){
+  state.theme=state.theme==='dark'?'light':'dark';
+  document.documentElement.setAttribute('data-theme',state.theme);
+  this.textContent=state.theme==='dark'?'LIGHT':'DARK';
+  applyAccent();
+};
+
+loadData();
+</script>
+</body>
+</html>
