@@ -295,12 +295,13 @@ const TABS = [
 ];
 
 // ── RUNTIME DATA ──────────────────────────────────────────────────
-let PLAYERS      = [];   // [{id,name,p1,p2a,p2b,p2c,total,c,you}]
-let PICKS_MAP    = {};   // {name_lower:{name,groups:[],boot,glove}}
-let GROUP_RESULTS = {};  // {A:'Mexico',B:'Switzerland',...}
-let BOOT_DATA    = [];   // [{name,goals,pickers:[]}]
-let GROUPS       = [];   // [{g,lead,confirmed,ok}]
-let LAST_SYNC    = '';
+let PLAYERS       = [];   // [{id,name,p1,p2a,p2b,p2c,total,c,you}]
+let PICKS_MAP     = {};   // {name_lower:{name,groups:[],boot,glove}}
+let GROUP_RESULTS = {};   // {A:'Mexico',...} — manually confirmed in sheet
+let WIKI_STANDINGS= {};   // {A:[{pos,name,pld,w,d,l,pts,gd},...], ...} — live from Wikipedia
+let BOOT_DATA     = [];   // [{name,goals,pickers:[]}]
+let GROUPS        = [];   // [{g,lead,confirmed,ok}]
+let LAST_SYNC     = '';
 
 // ── HELPERS ───────────────────────────────────────────────────────
 function san(s){
@@ -329,6 +330,27 @@ function flag(name){
   if(iso==='GB-SCT') return '🏴󠁧󠁢󠁳󠁣󠁴󠁿';
   return iso.toUpperCase().split('').map(c=>String.fromCodePoint(c.charCodeAt(0)+127397)).join('');
 }
+// Short 3-letter display names for picks matrix
+const TEAM_SHORT={
+  'united states':'USA','usa':'USA','south korea':'KOR','korea republic':'KOR',
+  'ivory coast':'CIV',"cote d'ivoire":'CIV','new zealand':'NZL',
+  'saudi arabia':'KSA','costa rica':'CRC','united arab emirates':'UAE',
+  'netherlands':'NED','switzerland':'SUI','argentina':'ARG','australia':'AUS',
+  'brazil':'BRA','cameroon':'CMR','colombia':'COL','croatia':'CRO',
+  'denmark':'DEN','ecuador':'ECU','england':'ENG','france':'FRA',
+  'germany':'GER','ghana':'GHA','iran':'IRN','italy':'ITA',
+  'japan':'JPN','mexico':'MEX','morocco':'MAR','nigeria':'NGA',
+  'norway':'NOR','panama':'PAN','paraguay':'PAR','peru':'PER',
+  'poland':'POL','portugal':'POR','romania':'ROU','scotland':'SCO',
+  'senegal':'SEN','serbia':'SRB','spain':'ESP','sweden':'SWE',
+  'turkey':'TUR','ukraine':'UKR','uruguay':'URU','venezuela':'VEN',
+  'wales':'WAL','canada':'CAN','chile':'CHI','belgium':'BEL',
+};
+function shortName(n){
+  if(!n) return '·';
+  return TEAM_SHORT[n.toLowerCase().trim()]||n.substring(0,3).toUpperCase();
+}
+
 function miniBar(val,maxVal,col){
   const pct=maxVal>0?Math.round(val/maxVal*100):0;
   return `<div style="display:flex;align-items:center;gap:8px;padding:0 4px">
@@ -373,6 +395,60 @@ function fetchSheet(gid,range){
     document.head.appendChild(s);
     setTimeout(()=>{ if(window[cb]){ delete window[cb]; rej(new Error('Timeout gid='+gid)); }},10000);
   });
+}
+
+// ── WIKIPEDIA (live group standings) ─────────────────────────────
+const WIKI_API='https://en.wikipedia.org/w/api.php';
+function jsonpFetch(url,key){
+  return new Promise((res,rej)=>{
+    const cb='_jpi_'+key+'_'+Date.now();
+    window[cb]=data=>{ delete window[cb]; document.getElementById('jpi-'+key)?.remove(); res(data); };
+    const sep=url.includes('?')?'&':'?';
+    const s=document.createElement('script'); s.id='jpi-'+key;
+    s.src=url+sep+'callback='+cb+'&format=json';
+    s.onerror=()=>{ delete window[cb]; s.remove(); rej(new Error('JSONP failed')); };
+    document.head.appendChild(s);
+    setTimeout(()=>{ if(window[cb]){ delete window[cb]; rej(new Error('Wiki timeout')); }},8000);
+  });
+}
+function wikiFetch(params){
+  const p={...params}; delete p.format; delete p.origin;
+  return jsonpFetch(WIKI_API+'?'+new URLSearchParams(p).toString(),'wiki');
+}
+function stripHtml(h){ return h.replace(/<[^>]+>/g,'').replace(/ /g,' ').trim(); }
+function cleanTeamName(r){ return r.replace(/\s*\([^)]*\)/g,'').replace(/\[[^\]]*\]/g,'').replace(/[ ​-‍﻿]/g,'').trim(); }
+
+async function fetchAllGroups(){
+  try{
+    const pageData=await wikiFetch({action:'parse',page:'2026_FIFA_World_Cup',prop:'sections'});
+    const sections=pageData.parse.sections;
+    const groupSecs=sections.filter(s=>s.level==='3'&&s.line.startsWith('Group '));
+    const standings={};
+    for(const gs of groupSecs){
+      await new Promise(r=>setTimeout(r,200));
+      try{
+        const data=await wikiFetch({action:'parse',page:'2026_FIFA_World_Cup',prop:'text',section:gs.index});
+        const text=data.parse.text['*'];
+        const tbl=text.match(/<table[^>]*wikitable[^>]*>[\s\S]*?<\/table>/);
+        if(tbl){
+          const rows=[...tbl[0].matchAll(/<tr>([\s\S]*?)<\/tr>/g)];
+          const teams=[];
+          for(let ri=1;ri<rows.length;ri++){
+            const cells=[...rows[ri][1].matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/g)].map(c=>stripHtml(c[1]));
+            if(cells.length>=10)
+              teams.push({pos:parseInt(cells[0])||ri,name:cleanTeamName(cells[1]),
+                pld:parseInt(cells[2])||0,w:parseInt(cells[3])||0,d:parseInt(cells[4])||0,
+                l:parseInt(cells[5])||0,pts:parseInt(cells[9])||0,gd:parseInt(cells[8])||0});
+          }
+          if(teams.length) standings[gs.line.replace('Group ','').trim()]=teams;
+        }
+      }catch(e){}
+    }
+    WIKI_STANDINGS=standings;
+    GROUPS=buildGroups();
+    renderTicker();
+    if(state.tab==='standings'||state.tab==='picks'||state.tab==='results') render();
+  }catch(e){}
 }
 
 // ── PARSERS ───────────────────────────────────────────────────────
@@ -447,12 +523,18 @@ function buildPlayers(lbData){
 function buildGroups(){
   const youPicks=PICKS_MAP[state.youName.toLowerCase()];
   return GROUP_NAMES.map((letter,idx)=>{
-    const lead=GROUP_RESULTS[letter]||null;
-    const confirmed=!!lead;
+    const wikiTeams=WIKI_STANDINGS[letter];
+    // Confirmed = all 4 teams have played all their games (pld >= 3)
+    const confirmed=wikiTeams&&wikiTeams.length>=4&&wikiTeams.every(t=>!isNaN(t.pld)&&t.pld>=3);
+    // Current leader from Wikipedia table position 1
+    const wikiLeader=wikiTeams&&wikiTeams[0]?wikiTeams[0].name:null;
+    // Sheet winner is the authoritative confirmed result; fallback to wiki leader
+    const sheetWinner=GROUP_RESULTS[letter]||null;
+    const lead=confirmed?(sheetWinner||wikiLeader):wikiLeader;
     const youPick=youPicks?youPicks.groups[idx]:null;
     let ok=null;
-    if(confirmed&&youPick) ok=nt(youPick)===nt(lead);
-    else if(confirmed&&!youPick) ok=false;
+    if(confirmed&&lead&&youPick) ok=nt(youPick)===nt(lead);
+    else if(confirmed&&lead&&!youPick) ok=false;
     return {g:letter,lead,confirmed,ok};
   });
 }
@@ -489,8 +571,8 @@ function applyAccent(){
 
 function renderTicker(){
   const tag=(t,col)=>`<span class="mono" style="font-size:9px;letter-spacing:.12em;color:${col||'var(--faint)'};border:1px solid currentColor;border-radius:3px;padding:1px 4px;margin-right:5px">${t}</span>`;
-  const grp=Object.entries(GROUP_RESULTS).map(([g,w])=>
-    `<span class="it">${tag('GRP '+g)}<span style="font-size:14px;margin-right:3px">${flag(w)}</span><b>${san(w)}</b></span>`);
+  const grp=GROUPS.filter(g=>g.lead).map(g=>
+    `<span class="it">${tag(g.confirmed?'✓ GRP '+g.g:'GRP '+g.g,g.confirmed?'var(--up)':null)}<span style="font-size:14px;margin-right:3px">${flag(g.lead)}</span><b>${san(g.lead)}</b></span>`);
   const bt=BOOT_DATA.slice(0,5).map(b=>
     `<span class="it">${tag('BOOT','var(--gold)')}<b>${san(b.name)}</b><span class="mono" style="color:var(--gold)">${b.goals}G</span></span>`);
   const lb=PLAYERS.slice(0,5).map((p,i)=>
@@ -503,24 +585,28 @@ function renderTicker(){
 
 // ── VIEWS ─────────────────────────────────────────────────────────
 function viewStandings(){
-  const settled=Object.keys(GROUP_RESULTS).length;
+  const settled=GROUPS.filter(g=>g.confirmed).length;
   const leader=PLAYERS[0];
   const you=PLAYERS.find(p=>p.you)||PLAYERS[0];
   const youPicks=PICKS_MAP[(you?.name||'').toLowerCase()];
   let yourCorrect=0;
-  if(youPicks) GROUP_NAMES.forEach((l,i)=>{
-    if(GROUP_RESULTS[l]&&nt(youPicks.groups[i])===nt(GROUP_RESULTS[l])) yourCorrect++;
+  if(youPicks) GROUPS.forEach((g,i)=>{
+    if(g.confirmed&&g.lead&&nt(youPicks.groups[i])===nt(g.lead)) yourCorrect++;
   });
+  const wikiLoaded=Object.keys(WIKI_STANDINGS).length>0;
 
   const statCards=[
     {k:'TOURNAMENT PHASE', v:'1 / 4',                s:'Group Stage · Live',        col:'var(--up)'},
     {k:'CURRENT LEADER',   v:leader?san(leader.name):'—', s:leader?(leader.total+' pts'):'', col:'var(--accent)'},
-    {k:'GROUPS SETTLED',   v:settled+' / 12',         s:'group winners confirmed',   col:'var(--muted)'},
-    {k:'YOUR CORRECT',     v:yourCorrect+' / 12',     s:'picks nailed so far',       col:'var(--up)'},
+    {k:'GROUPS SETTLED',   v:settled+' / 12',         s:'all group games played',    col:'var(--muted)'},
+    {k:'YOUR CORRECT',     v:yourCorrect+' / '+settled, s:settled?'picks nailed so far':'no groups settled yet', col:'var(--up)'},
   ].map(s=>`<div class="stat"><div class="k">${s.k}</div><div class="v" style="color:${s.col}">${s.v}</div><div class="s" style="color:${s.col}">${s.s}</div></div>`).join('');
 
+  const wikiNote=!wikiLoaded?`<span class="pnote" style="color:var(--accent)">⟳ loading live…</span>`:`<span class="pnote">${settled}/12 settled</span>`;
+
   const gcards=GROUPS.map(c=>{
-    if(!c.confirmed){
+    // No data at all yet
+    if(!c.lead){
       return `<div class="gcard">
         <div class="row" style="margin-bottom:9px">
           <span class="glabel">GRP ${c.g}</span>
@@ -529,12 +615,26 @@ function viewStandings(){
         <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--faint)">Pending…</span>
       </div>`;
     }
-    const callColor=c.ok===true?'var(--up)':c.ok===false?'var(--down)':'var(--faint)';
-    const callLabel=c.ok===true?'✓ CORRECT':c.ok===false?'✕ WRONG':'OPEN';
+    // Group confirmed (all games played)
+    if(c.confirmed){
+      const callColor=c.ok===true?'var(--up)':c.ok===false?'var(--down)':'var(--faint)';
+      const callLabel=c.ok===true?'✓ CORRECT':c.ok===false?'✕ WRONG':'WINNER';
+      return `<div class="gcard" style="border-color:${c.ok===true?'rgba(47,207,143,.35)':c.ok===false?'rgba(255,93,108,.25)':'var(--line)'}">
+        <div class="row" style="margin-bottom:9px">
+          <span class="glabel">GRP ${c.g}</span>
+          <span class="gcall" style="color:${callColor}">${callLabel}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:5px">
+          <span style="font-size:16px;line-height:1">${flag(c.lead)}</span>
+          <span class="tk">${san(c.lead)}</span>
+        </div>
+      </div>`;
+    }
+    // In progress — has a current leader from Wikipedia but not settled
     return `<div class="gcard">
       <div class="row" style="margin-bottom:9px">
         <span class="glabel">GRP ${c.g}</span>
-        <span class="gcall" style="color:${callColor}">${callLabel}</span>
+        <span class="gcall" style="color:var(--accent)">LEADING</span>
       </div>
       <div style="display:flex;align-items:center;gap:5px">
         <span style="font-size:16px;line-height:1">${flag(c.lead)}</span>
@@ -569,7 +669,7 @@ function viewStandings(){
       <div class="panel pad">
         <div class="head" style="margin-bottom:15px">
           <span class="ptitle">GROUP LEADERS</span>
-          <span class="pnote">${settled}/12 settled</span>
+          ${wikiNote}
         </div>
         <div class="gm">${gcards}</div>
       </div>
@@ -640,17 +740,33 @@ function viewPicks(){
     let cells='';
     GROUP_NAMES.forEach((letter,i)=>{
       const pick=picks?picks.groups[i]:'';
-      const actual=GROUP_RESULTS[letter];
+      const grp=GROUPS[i];
+      // Only show ✓/✕ for confirmed groups
       let ok=null;
-      if(actual&&pick) ok=nt(pick)===nt(actual);
-      else if(actual&&!pick) ok=false;
-      const [bg,fg,mk]=cellOk(ok);
-      cells+=`<div class="pmcell" title="${san(pick||'—')}"><span class="mk" style="background:${bg};color:${fg}">${mk}</span></div>`;
+      if(grp.confirmed&&grp.lead&&pick) ok=nt(pick)===nt(grp.lead);
+      else if(grp.confirmed&&grp.lead&&!pick) ok=false;
+      const [bg,fg]=cellOk(ok);
+      const f=flag(pick);
+      const s=shortName(pick);
+      if(!pick){
+        cells+=`<div class="pmcell"><span class="mk" style="background:var(--panel2);color:var(--faint)">·</span></div>`;
+      } else {
+        const indicator=ok===true?'<span style="font-size:9px;line-height:1">✓</span>':ok===false?'<span style="font-size:9px;line-height:1">✕</span>':'';
+        cells+=`<div class="pmcell" title="${san(pick)}">
+          <span class="mk" style="background:${bg};color:${fg};flex-direction:column;height:46px;width:40px;gap:1px">
+            <span style="font-size:13px;line-height:1">${f||'🏳'}</span>
+            <span style="font-size:8px;font-weight:700;letter-spacing:.03em;line-height:1">${s}</span>
+            ${indicator}
+          </span>
+        </div>`;
+      }
     });
     const bPick=picks?picks.boot:'';
     const gPick=picks?picks.glove:'';
-    cells+=`<div class="pmcell" title="${san(bPick)}"><span class="mk" style="background:var(--panel2);color:var(--muted);font-size:9px;white-space:nowrap;padding:2px">${bPick?san(bPick.split(' ').slice(-1)[0]):'·'}</span></div>`;
-    cells+=`<div class="pmcell" title="${san(gPick)}"><span class="mk" style="background:var(--panel2);color:var(--muted);font-size:9px;white-space:nowrap;padding:2px">${gPick?san(gPick.split(' ').slice(-1)[0]):'·'}</span></div>`;
+    const bShort=bPick?san(bPick.split(' ').slice(-1)[0]):'·';
+    const gShort=gPick?san(gPick.split(' ').slice(-1)[0]):'·';
+    cells+=`<div class="pmcell" title="${san(bPick)}"><span class="mk" style="background:var(--panel2);color:var(--muted);flex-direction:column;height:46px;width:40px;gap:2px"><span style="font-size:11px">⚽</span><span style="font-size:8px;font-weight:700;letter-spacing:.02em">${bShort}</span></span></div>`;
+    cells+=`<div class="pmcell" title="${san(gPick)}"><span class="mk" style="background:var(--panel2);color:var(--muted);flex-direction:column;height:46px;width:40px;gap:2px"><span style="font-size:11px">🧤</span><span style="font-size:8px;font-weight:700;letter-spacing:.02em">${gShort}</span></span></div>`;
     return `<div class="pmgrid pmrow ${p.you?'you':''}">
       <div style="display:flex;align-items:center;gap:9px;padding:8px 14px">
         <div class="av" style="width:24px;height:24px;font-size:10px;background:${p.c}">${ini(p.name)}</div>
@@ -689,18 +805,20 @@ function viewBracket(){
 }
 
 function viewResults(){
-  const leaders=GROUP_NAMES.map(letter=>{
-    const w=GROUP_RESULTS[letter];
-    const youPicks=PICKS_MAP[state.youName.toLowerCase()];
-    const youPick=youPicks?youPicks.groups[GROUP_NAMES.indexOf(letter)]:'';
-    const ok=w&&youPick?nt(youPick)===nt(w):null;
+  const youPicks=PICKS_MAP[state.youName.toLowerCase()];
+  const leaders=GROUPS.map((grp,i)=>{
+    const youPick=youPicks?youPicks.groups[i]:'';
+    const ok=grp.confirmed&&grp.lead&&youPick?nt(youPick)===nt(grp.lead):null;
+    const label=grp.confirmed?'WINNER':grp.lead?'LEADING':'OPEN';
+    const labelCol=grp.confirmed?'var(--up)':grp.lead?'var(--accent)':'var(--faint)';
     return `<div class="glrow">
-      <span class="mono" style="font-weight:700;font-size:12px;color:var(--faint);width:48px">GRP ${letter}</span>
-      ${w?`<span style="font-size:18px;line-height:1">${flag(w)}</span>`:''}
-      <span style="font-weight:600;font-size:14px;flex:1">${w?san(w):'—'}</span>
-      ${w?`<span class="mono" style="font-size:11px;color:${ok===true?'var(--up)':'var(--down)'}">
-        ${ok===true?'✓ you':'✕ you'}</span>`
-        :`<span class="mono" style="font-size:11px;color:var(--faint)">pending</span>`}
+      <span class="mono" style="font-weight:700;font-size:12px;color:var(--faint);width:48px">GRP ${grp.g}</span>
+      ${grp.lead?`<span style="font-size:18px;line-height:1">${flag(grp.lead)}</span>`:''}
+      <span style="font-weight:600;font-size:14px;flex:1">${grp.lead?san(grp.lead):'—'}</span>
+      <span class="mono" style="font-size:10px;color:${labelCol}">${label}</span>
+      ${grp.confirmed&&grp.lead
+        ?`<span class="mono" style="font-size:11px;color:${ok===true?'var(--up)':'var(--down)'};width:48px;text-align:right">${ok===true?'✓ you':'✕ you'}</span>`
+        :`<span style="width:48px"></span>`}
     </div>`;
   }).join('');
 
@@ -808,6 +926,9 @@ async function loadData(){
   renderTicker();
   render();
   document.getElementById('loading-overlay').classList.add('hidden');
+
+  // Fetch live Wikipedia standings in background (updates groups after initial render)
+  fetchAllGroups();
 }
 
 // ── INIT ──────────────────────────────────────────────────────────
