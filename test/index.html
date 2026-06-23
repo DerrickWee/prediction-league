@@ -418,7 +418,34 @@ function wikiFetch(params){
 function stripHtml(h){ return h.replace(/<[^>]+>/g,'').replace(/ /g,' ').trim(); }
 function cleanTeamName(r){ return r.replace(/\s*\([^)]*\)/g,'').replace(/\[[^\]]*\]/g,'').replace(/[ ​-‍﻿]/g,'').trim(); }
 
+// Cache Wikipedia standings in localStorage — keyed by SGT date so it re-fetches once per day
+const WIKI_CACHE_KEY='banter_wiki_v1';
+function todaySGT(){ return new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Singapore'}); }
+function loadWikiCache(){
+  try{
+    const raw=localStorage.getItem(WIKI_CACHE_KEY);
+    if(!raw) return null;
+    const {date,data}=JSON.parse(raw);
+    if(date===todaySGT()) return data;
+  }catch(e){}
+  return null;
+}
+function saveWikiCache(data){
+  try{ localStorage.setItem(WIKI_CACHE_KEY,JSON.stringify({date:todaySGT(),data})); }catch(e){}
+}
+
+function applyWikiStandings(standings){
+  WIKI_STANDINGS=standings;
+  GROUPS=buildGroups();
+  renderTicker();
+  if(state.tab==='standings'||state.tab==='picks'||state.tab==='results') render();
+}
+
 async function fetchAllGroups(){
+  // Use cached data if it's from today — avoids 12+ Wikipedia calls on every page load
+  const cached=loadWikiCache();
+  if(cached){ applyWikiStandings(cached); return; }
+
   try{
     const pageData=await wikiFetch({action:'parse',page:'2026_FIFA_World_Cup',prop:'sections'});
     const sections=pageData.parse.sections;
@@ -444,10 +471,8 @@ async function fetchAllGroups(){
         }
       }catch(e){}
     }
-    WIKI_STANDINGS=standings;
-    GROUPS=buildGroups();
-    renderTicker();
-    if(state.tab==='standings'||state.tab==='picks'||state.tab==='results') render();
+    if(Object.keys(standings).length) saveWikiCache(standings);
+    applyWikiStandings(standings);
   }catch(e){}
 }
 
